@@ -9,12 +9,23 @@ logger = logging.getLogger(__name__)
 def get_user_setting(user_id=1): # Assuming single user or user_id based retrieval
     return UserSettings.query.filter_by(user_id=user_id).first()
 
-def save_user_setting(user_id=1, exchange='binance', api_key=None, api_secret=None, use_testnet=False):
+def save_user_setting(user_id=1, exchange='binance', api_key=None, api_secret=None, use_testnet=False, max_account_drawdown_percentage=None, max_trade_size_percentage_balance=None, default_stop_loss_percentage=None, peak_account_equity=None):
     setting = get_user_setting(user_id)
     if not setting:
         setting = UserSettings(user_id=user_id)
     setting.selected_exchange = exchange
-    setting.use_testnet = use_testnet # Added assignment for use_testnet
+    setting.use_testnet = use_testnet
+
+    # Update risk management fields if provided
+    if max_account_drawdown_percentage is not None:
+        setting.max_account_drawdown_percentage = float(max_account_drawdown_percentage)
+    if max_trade_size_percentage_balance is not None:
+        setting.max_trade_size_percentage_balance = float(max_trade_size_percentage_balance)
+    if default_stop_loss_percentage is not None:
+        setting.default_stop_loss_percentage = float(default_stop_loss_percentage)
+    if peak_account_equity is not None: # peak_account_equity can be 0.0, so check for None explicitly
+        setting.peak_account_equity = float(peak_account_equity)
+
     if api_key and api_secret:
         # In a real app, ENCRYPTION_KEY would come from a secure config
         setting.set_api_credentials(api_key, api_secret, APP_ENCRYPTION_KEY)

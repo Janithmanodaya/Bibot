@@ -9,7 +9,7 @@ class ExchangeService:
     def get_trade_history(self, symbol=None):
         raise NotImplementedError
 
-    def place_order(self, symbol, side, type, quantity, price=None):
+    def place_order(self, symbol, side, type, quantity, price=None, stop_price=None):
         raise NotImplementedError
 
     def get_market_data(self, symbol):

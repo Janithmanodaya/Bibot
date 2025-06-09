@@ -6,6 +6,7 @@
     <h2>Settings</h2>
     <hr>
     <form id="settings-form">
+        <h4>Exchange Configuration</h4>
         <div class="form-group">
             <label for="exchange-select">Exchange:</label>
             <select class="form-control" id="exchange-select" name="exchange">
@@ -19,13 +20,38 @@
         </div>
         <div class="form-group">
             <label for="api-secret">API Secret:</label>
-            <input type="password" class="form-control" id="api-secret" name="api_secret" placeholder="Enter your API secret">
+            <input type="password" class="form-control" id="api-secret" name="api_secret" placeholder="Enter your API secret (only if changing)">
+            <small class="form-text text-muted">Leave blank if you do not wish to change the current secret.</small>
         </div>
         <div class="form-group form-check">
             <input type="checkbox" class="form-check-input" id="use-testnet" name="use_testnet">
             <label class="form-check-label" for="use-testnet">Use Testnet</label>
         </div>
-        <button type="submit" class="btn btn-primary">Save Settings</button>
+        <hr>
+        <h4>Risk Management</h4>
+        <div class="form-row">
+            <div class="form-group col-md-6">
+                <label for="max_account_drawdown_percentage">Max Account Drawdown (%):</label>
+                <input type="number" step="0.1" class="form-control" id="max_account_drawdown_percentage" name="max_account_drawdown_percentage" placeholder="e.g., 20">
+            </div>
+            <div class="form-group col-md-6">
+                <label for="peak_account_equity">Peak Account Equity ($):</label>
+                <input type="number" step="0.01" class="form-control" id="peak_account_equity" name="peak_account_equity" placeholder="Tracks highest equity">
+                <small class="form-text text-muted">Updated automatically or can be reset here.</small>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group col-md-6">
+                <label for="max_trade_size_percentage_balance">Max Trade Size (% of Balance):</label>
+                <input type="number" step="0.1" class="form-control" id="max_trade_size_percentage_balance" name="max_trade_size_percentage_balance" placeholder="e.g., 5">
+            </div>
+            <div class="form-group col-md-6">
+                <label for="default_stop_loss_percentage">Default Stop-Loss (% below entry):</label>
+                <input type="number" step="0.1" class="form-control" id="default_stop_loss_percentage" name="default_stop_loss_percentage" placeholder="e.g., 2">
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-3">Save Settings</button>
     </form>
     <div id="settings-status" class="mt-3"></div>
 </div>
@@ -37,6 +63,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const settingsForm = document.getElementById('settings-form');
     const statusDiv = document.getElementById('settings-status');
 
+    // IDs of risk parameter fields
+    const riskFields = [
+        'max_account_drawdown_percentage',
+        'max_trade_size_percentage_balance',
+        'default_stop_loss_percentage',
+        'peak_account_equity'
+    ];
+
     // Load existing settings
     fetch('/api/settings')
         .then(response => response.json())
@@ -44,33 +78,51 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data) {
                 document.getElementById('exchange-select').value = data.exchange || 'binance';
                 document.getElementById('api-key').value = data.api_key || '';
-                // Do not populate api-secret for security, user can re-enter if they want to change
-                // document.getElementById('api-secret').value = data.api_secret || '';
+                // API Secret is not pre-filled for security
                 document.getElementById('use-testnet').checked = data.use_testnet || false;
+
+                // Populate risk management fields
+                riskFields.forEach(fieldId => {
+                    const fieldElement = document.getElementById(fieldId);
+                    if (fieldElement && data[fieldId] !== null && data[fieldId] !== undefined) {
+                        fieldElement.value = data[fieldId];
+                    } else if (fieldElement) {
+                        // fieldElement.value = ''; // Or set a default placeholder visible to user
+                    }
+                });
             }
         })
         .catch(error => {
             console.error('Error loading settings:', error);
-            statusDiv.innerHTML = '<div class="alert alert-danger">Error loading settings.</div>';
+            statusDiv.innerHTML = '<div class="alert alert-danger">Error loading settings. Check console.</div>';
         });
 
     settingsForm.addEventListener('submit', function(event) {
         event.preventDefault();
-        statusDiv.innerHTML = ''; // Clear previous status
+        statusDiv.innerHTML = '';
 
         const formData = new FormData(settingsForm);
         const data = {
             exchange: formData.get('exchange'),
             api_key: formData.get('api_key'),
-            api_secret: formData.get('api_secret'), // Only send if user entered a new one
-            use_testnet: formData.get('use_testnet') === 'on' // FormData gives 'on' for checkbox
+            use_testnet: formData.get('use_testnet') === 'on'
         };
 
-        // If API secret is empty and was previously set, don't overwrite with empty string unless intended.
-        // For simplicity here, we send what's in the form. A real app might need more complex logic
-        // to only update secret if a new value is provided.
-        // If api_secret field is empty, we might not want to send it, or send an instruction to not change it.
-        // Current backend saves what it gets.
+        // Only include api_secret if user has entered something
+        const apiSecretValue = formData.get('api_secret');
+        if (apiSecretValue) {
+            data.api_secret = apiSecretValue;
+        }
+
+        // Add risk management fields to the data payload
+        riskFields.forEach(fieldId => {
+            const value = formData.get(fieldId);
+            if (value !== "" && value !== null) { // Only send if not empty string
+                data[fieldId] = value; // Backend will parse to float
+            } else {
+                data[fieldId] = null; // Send null if empty, so backend can ignore or set default
+            }
+        });
 
         fetch('/api/settings', {
             method: 'POST',
@@ -81,7 +133,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(result => {
             if (result.status === 200 || result.status === 201) {
                 statusDiv.innerHTML = '<div class="alert alert-success">' + (result.body.message || 'Settings saved successfully!') + '</div>';
-                if (!data.api_secret) { // If secret was submitted empty, clear the form field
+                if (apiSecretValue) { // Clear secret field after successful save if it was touched
                     document.getElementById('api-secret').value = '';
                 }
             } else {
@@ -90,7 +142,7 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(error => {
             console.error('Error saving settings:', error);
-            statusDiv.innerHTML = '<div class="alert alert-danger">Error saving settings.</div>';
+            statusDiv.innerHTML = '<div class="alert alert-danger">Error saving settings. Check console.</div>';
         });
     });
 });

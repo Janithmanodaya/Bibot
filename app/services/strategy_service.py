@@ -1,13 +1,9 @@
 import pandas as pd
-# Ensure all necessary technical indicator functions are imported
-from .technical_indicators import (
-    calculate_sma,
-    calculate_rsi,
-    calculate_macd,
-    calculate_bollinger_bands,
-    calculate_stochastic_oscillator
-)
+from .technical_indicators import calculate_sma, calculate_rsi, calculate_macd, calculate_bollinger_bands, calculate_stochastic_oscillator
+from app.services import db_service
+from binance.client import Client # For ORDER_TYPE_STOP_LOSS_LIMIT etc.
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -21,237 +17,243 @@ class Strategy:
         self.params.update(params)
         logger.info(f'Strategy {self.name} parameters updated: {self.params}')
 
-    def generate_signals(self, ohlc_data: pd.DataFrame):
-        """
-        Generates trading signals based on the OHLC data.
-        :param ohlc_data: Pandas DataFrame with columns ['open_time', 'open', 'high', 'low', 'close', 'volume']
-        :return: A signal ('buy', 'sell', 'hold') or a more complex signal object.
-        """
+    def generate_signals(self, ohlc_data: pd.DataFrame) -> str:
         raise NotImplementedError('This method should be implemented by subclasses.')
 
-    def execute(self, current_market_data, account_balance, open_positions):
-        """
-        Makes a decision to trade based on generated signals and current market conditions.
-        This might involve risk management checks before placing an order.
-        """
-        # signals = self.generate_signals(current_market_data) # Assuming current_market_data is sufficient or historical is pre-loaded
-        # Decision logic here
-        logger.warning(f'Execution logic for strategy {self.name} not implemented.')
-        return None # No action
+    def execute(self, ohlc_data: pd.DataFrame, exchange_service_instance, user_id=1):
+        signal = self.generate_signals(ohlc_data)
+        logger.info(f"Strategy {self.name} generated signal: {signal} for user {user_id} with params {self.params}")
+
+        if signal not in ['buy', 'sell']:
+            return {'status': 'hold', 'signal': signal, 'reason': 'No action signal.'}
+
+        user_settings = db_service.get_user_setting(user_id=user_id)
+        if not user_settings:
+            logger.error(f"User settings not found for user_id {user_id}.")
+            return {'status': 'error', 'reason': 'User settings not found.'}
+
+        max_trade_size_pct = getattr(user_settings, 'max_trade_size_percentage_balance', None)
+        default_stop_loss_pct = getattr(user_settings, 'default_stop_loss_percentage', None)
+
+        symbol = self.params.get('symbol', 'BTCUSDT')
+        if not symbol:
+            logger.error(f"Strategy {self.name} has no symbol defined."); return {'status': 'error', 'reason': 'Strategy symbol not defined.'}
+        if 'close' not in ohlc_data or ohlc_data['close'].empty:
+             logger.warning(f"No close prices in ohlc_data for {self.name} on {symbol}"); return {'status': 'hold', 'reason': 'Insufficient data.'}
+
+        current_price = ohlc_data['close'].iloc[-1] # Used for checks and potentially for LIMIT order price if not specified
+        entry_order_type = self.params.get('order_type', Client.ORDER_TYPE_MARKET) # Default to MARKET for entry
+        entry_price_for_limit_offset_pct = self.params.get('entry_limit_price_offset_pct', 0)
+
+        base_quantity = self.params.get('default_quantity', 0.0001)
+        quantity_to_trade = base_quantity
+
+        if signal == 'buy' and max_trade_size_pct is not None:
+            account_balance_info = exchange_service_instance.get_account_balance()
+            if not account_balance_info:
+                logger.error(f"Could not retrieve account balance for user {user_id}."); return {'status': 'error', 'reason': 'Failed to get account balance.'}
+            quote_asset = "USDT"
+            if symbol.endswith("BUSD"): quote_asset = "BUSD"
+            elif symbol.endswith("BTC"): quote_asset = "BTC"
+
+            available_quote_balance = 0
+            balance_asset_info = account_balance_info.get(quote_asset)
+            if balance_asset_info:
+                if isinstance(balance_asset_info, dict): available_quote_balance = float(balance_asset_info.get('free', 0))
+                else: available_quote_balance = float(balance_asset_info or 0)
+
+            if available_quote_balance <= 0:
+                logger.warning(f"No available balance for {quote_asset}."); return {'status': 'hold', 'reason': f'Insufficient {quote_asset} balance.'}
+
+            max_permissible_value_in_quote = available_quote_balance * (float(max_trade_size_pct) / 100.0)
+
+            if current_price > 0: # Avoid division by zero if price is somehow zero
+                quantity_allowed_by_risk = max_permissible_value_in_quote / current_price
+                quantity_to_trade = min(base_quantity, quantity_allowed_by_risk)
+            else:
+                logger.warning(f"Current price for {symbol} is {current_price}. Cannot calculate risk-allowed quantity.");
+                quantity_to_trade = 0 # Or handle as an error preventing trade
+
+            logger.info(f"Risk check for BUY {symbol}: Max Qty: {quantity_allowed_by_risk if current_price > 0 else 'N/A'}. Final Qty: {quantity_to_trade:.6f}")
+
+        if quantity_to_trade <= 0: # If quantity becomes zero or negative after risk check
+            logger.warning(f"Quantity to trade for {symbol} is {quantity_to_trade}. Holding.")
+            return {'status': 'hold', 'reason': 'Quantity to trade is zero or negative after risk checks.'}
+
+        min_notional = self.params.get('min_notional', 10.0)
+        if current_price > 0 and quantity_to_trade * current_price < min_notional: # Check current_price > 0 here too
+            logger.warning(f"Order value for {symbol} below min_notional. Holding."); return {'status': 'hold', 'reason': f'Order value below min {min_notional}.'}
+        elif current_price <= 0 and min_notional > 0 : # If price is zero, any trade is effectively zero notional unless min_notional is also zero
+             logger.warning(f"Current price for {symbol} is {current_price}. Cannot meet min_notional {min_notional}. Holding."); return {'status': 'hold', 'reason': 'Current price is zero.'}
+
+
+        entry_order_price = None
+        if entry_order_type == Client.ORDER_TYPE_LIMIT:
+            price_offset_multiplier = (1 - entry_price_for_limit_offset_pct / 100.0) if signal == 'buy' else (1 + entry_price_for_limit_offset_pct / 100.0)
+            limit_price_candidate = current_price * price_offset_multiplier
+            entry_order_price = exchange_service_instance.format_price(symbol, limit_price_candidate)
+
+
+        entry_order_result = None
+        stop_loss_order_result = None
+        final_status = {'signal': signal, 'symbol': symbol}
+
+        try:
+            logger.info(f"Placing ENTRY order for {self.name} on {symbol}: {signal} {quantity_to_trade:.8f} Type: {entry_order_type} Price: {entry_order_price if entry_order_price else current_price:.2f}")
+
+            formatted_quantity_to_trade = exchange_service_instance.format_quantity(symbol, quantity_to_trade)
+
+            entry_order_result = exchange_service_instance.place_order(
+                symbol=symbol, side=signal.upper(), type=entry_order_type,
+                quantity=formatted_quantity_to_trade, price=entry_order_price
+            )
+            final_status['entry_order'] = entry_order_result
+            logger.info(f"Entry order response: {entry_order_result}")
+
+            entry_order_id = entry_order_result.get('orderId')
+            entry_order_status = str(entry_order_result.get('status','')).upper()
+
+            if entry_order_id and entry_order_status in ['NEW', 'FILLED', 'PARTIALLY_FILLED']:
+                logger.info(f"Entry order for {symbol} {entry_order_status}. Proceeding to place Stop-Loss if configured.")
+
+                if default_stop_loss_pct is not None:
+                    sl_pct = float(default_stop_loss_pct)
+
+                    # Determine actual entry price for SL calculation
+                    actual_entry_price = current_price # Default to current_price
+                    if entry_order_status == 'FILLED' and entry_order_result.get('fills') and len(entry_order_result['fills']) > 0:
+                        actual_entry_price = float(entry_order_result['fills'][0]['price'])
+                    elif entry_order_type == Client.ORDER_TYPE_LIMIT and entry_order_price: # If LIMIT order is NEW, base SL on its price
+                        actual_entry_price = float(entry_order_price) # Already formatted
+
+                    stop_loss_trigger_price = 0
+                    sl_limit_price = 0
+
+                    if signal == 'buy':
+                        stop_loss_trigger_price = actual_entry_price * (1 - (sl_pct / 100.0))
+                        sl_limit_price = stop_loss_trigger_price * (1 - 0.001)
+                    elif signal == 'sell':
+                        stop_loss_trigger_price = actual_entry_price * (1 + (sl_pct / 100.0))
+                        sl_limit_price = stop_loss_trigger_price * (1 + 0.001)
+
+                    stop_loss_trigger_price = exchange_service_instance.format_price(symbol, stop_loss_trigger_price)
+                    sl_limit_price = exchange_service_instance.format_price(symbol, sl_limit_price)
+
+                    sl_side = Client.SIDE_SELL if signal == 'buy' else Client.SIDE_BUY
+
+                    logger.info(f"Placing STOP-LOSS order for {symbol}: Side={sl_side}, Qty={formatted_quantity_to_trade}, TriggerP={stop_loss_trigger_price}, LimitP={sl_limit_price}")
+                    try:
+                        if entry_order_type == Client.ORDER_TYPE_MARKET and entry_order_status != 'FILLED':
+                             time.sleep(1) # Brief pause for market order to potentially fill before placing SL
+
+                        stop_loss_order_result = exchange_service_instance.place_order(
+                            symbol=symbol, side=sl_side, type=Client.ORDER_TYPE_STOP_LOSS_LIMIT,
+                            quantity=formatted_quantity_to_trade, price=sl_limit_price, stop_price=stop_loss_trigger_price,
+                            timeInForce=Client.TIME_IN_FORCE_GTC
+                        )
+                        final_status['stop_loss_order'] = stop_loss_order_result
+                        logger.info(f"Stop-Loss order response: {stop_loss_order_result}")
+                    except Exception as sl_e:
+                        logger.error(f"Failed to place Stop-Loss order for {symbol} after entry: {sl_e}", exc_info=True)
+                        final_status['stop_loss_error'] = str(sl_e)
+
+                final_status['status'] = 'success_entry_placed'
+            else:
+                logger.error(f"Entry order placement failed or not confirmed: {entry_order_result}")
+                final_status['status'] = 'error_entry_failed'
+                final_status['reason'] = 'Entry order placement failed or status not actionable.'
+                final_status['details'] = entry_order_result
+
+        except Exception as e:
+            logger.error(f"Exception during entry order placement for {self.name} on {symbol}: {e}", exc_info=True)
+            final_status['status'] = 'error_exception'
+            final_status['reason'] = f'Exception: {e}'
+
+        return final_status
 
 # --- Predefined Strategies ---
-
 class MovingAverageCrossoverStrategy(Strategy):
     def __init__(self, params=None):
-        # Adjusted default_params
-        default_params = {'short_window': 10, 'long_window': 50}
+        default_params = {'short_window': 10, 'long_window': 50, 'symbol': 'BTCUSDT', 'default_quantity': 0.001, 'order_type': Client.ORDER_TYPE_MARKET}
         if params: default_params.update(params)
         super().__init__('MovingAverageCrossover', default_params)
-
     def generate_signals(self, ohlc_data: pd.DataFrame):
-        logger.info(f'{self.name}: Generating signals with params {self.params} using simplified logic.')
-        if 'close' not in ohlc_data.columns:
-            logger.error(f'{self.name}: OHLC data must contain a "close" column.')
-            return 'hold'
-
-        short_window = self.params.get('short_window')
-        long_window = self.params.get('long_window')
-
-        if not (isinstance(short_window, int) and isinstance(long_window, int) and short_window > 0 and long_window > 0 and short_window < long_window):
-            logger.error(f'{self.name}: Invalid MA windows: short={short_window}, long={long_window}')
-            return 'hold'
-
-        if len(ohlc_data) < long_window:
-            logger.warning(f'{self.name}: Data length ({len(ohlc_data)}) is less than long_window ({long_window}). Cannot generate reliable signal.')
-            return 'hold'
-
-        short_ma = calculate_sma(ohlc_data['close'], short_window)
-        long_ma = calculate_sma(ohlc_data['close'], long_window)
-
-        if short_ma.empty or long_ma.empty or len(short_ma) < 1 or len(long_ma) < 1: # Ensure MAs are not empty
-            return 'hold'
-
-        current_short_ma = short_ma.iloc[-1]
-        current_long_ma = long_ma.iloc[-1]
-
-        # Simplified logic (no crossover condition)
-        if current_short_ma > current_long_ma:
-            logger.info(f'{self.name}: Buy signal generated (Short MA > Long MA).')
-            return 'buy'
-        if current_short_ma < current_long_ma:
-            logger.info(f'{self.name}: Sell signal generated (Short MA < Long MA).')
-            return 'sell'
-
+        if 'close' not in ohlc_data.columns: return 'hold'
+        short_window = self.params.get('short_window'); long_window = self.params.get('long_window')
+        if not (isinstance(short_window, int) and isinstance(long_window, int) and short_window > 0 and long_window > 0 and short_window < long_window): return 'hold'
+        if len(ohlc_data) < long_window: return 'hold'
+        short_ma = calculate_sma(ohlc_data['close'], short_window); long_ma = calculate_sma(ohlc_data['close'], long_window)
+        if short_ma.empty or long_ma.empty or len(short_ma) < 1 or len(long_ma) < 1: return 'hold'
+        current_short_ma = short_ma.iloc[-1]; current_long_ma = long_ma.iloc[-1]
+        if current_short_ma > current_long_ma: return 'buy'
+        if current_short_ma < current_long_ma: return 'sell'
         return 'hold'
 
 class RSIOverboughtOversoldStrategy(Strategy):
     def __init__(self, params=None):
-        # Default params match specification
-        default_params = {'rsi_window': 14, 'oversold_threshold': 30, 'overbought_threshold': 70}
+        default_params = {'rsi_window': 14, 'oversold_threshold': 30, 'overbought_threshold': 70, 'symbol': 'BTCUSDT', 'default_quantity': 0.001, 'order_type': Client.ORDER_TYPE_MARKET}
         if params: default_params.update(params)
         super().__init__('RSIOverboughtOversold', default_params)
-
-    def generate_signals(self, ohlc_data: pd.DataFrame): # Logic remains the same as previous step
-        logger.info(f'{self.name}: Generating signals with params {self.params}')
-        if 'close' not in ohlc_data.columns:
-            logger.error(f'{self.name}: OHLC data must contain a "close" column.')
-            return 'hold'
-
-        rsi_window = self.params.get('rsi_window', 14)
-        oversold_threshold = self.params.get('oversold_threshold', 30)
-        overbought_threshold = self.params.get('overbought_threshold', 70)
-
-        if not (isinstance(rsi_window, int) and rsi_window > 0):
-            logger.error(f'{self.name}: Invalid RSI window: {rsi_window}')
-            return 'hold'
-        if len(ohlc_data) < rsi_window + 1:
-            logger.warning(f'{self.name}: Data length ({len(ohlc_data)}) insufficient for RSI window {rsi_window}.')
-            return 'hold'
-
+    def generate_signals(self, ohlc_data: pd.DataFrame):
+        if 'close' not in ohlc_data.columns: return 'hold'
+        rsi_window = self.params.get('rsi_window', 14); oversold_threshold = self.params.get('oversold_threshold', 30); overbought_threshold = self.params.get('overbought_threshold', 70)
+        if not (isinstance(rsi_window, int) and rsi_window > 0): return 'hold'
+        if len(ohlc_data) < rsi_window + 1: return 'hold'
         rsi = calculate_rsi(ohlc_data['close'], rsi_window)
-
-        if rsi.empty or len(rsi) < 1:
-            return 'hold'
-
+        if rsi.empty or len(rsi) < 1: return 'hold'
         current_rsi = rsi.iloc[-1]
-
-        if current_rsi < oversold_threshold:
-            logger.info(f'{self.name}: Buy signal generated (RSI {current_rsi:.2f} < {oversold_threshold}).')
-            return 'buy'
-        if current_rsi > overbought_threshold:
-            logger.info(f'{self.name}: Sell signal generated (RSI {current_rsi:.2f} > {overbought_threshold}).')
-            return 'sell'
-
+        if current_rsi < oversold_threshold: return 'buy'
+        if current_rsi > overbought_threshold: return 'sell'
         return 'hold'
 
 class MACDSignalStrategy(Strategy):
     def __init__(self, params=None):
-        # Default params match specification
-        default_params = {'short_window': 12, 'long_window': 26, 'signal_window': 9}
+        default_params = {'short_window': 12, 'long_window': 26, 'signal_window': 9, 'symbol': 'BTCUSDT', 'default_quantity': 0.001, 'order_type': Client.ORDER_TYPE_MARKET}
         if params: default_params.update(params)
         super().__init__('MACDSignal', default_params)
-
     def generate_signals(self, ohlc_data: pd.DataFrame):
-        logger.info(f'{self.name}: Generating signals with params {self.params} using simplified logic.')
-        if 'close' not in ohlc_data.columns:
-            logger.error(f'{self.name}: OHLC data must contain a "close" column.')
-            return 'hold'
-
-        short_window = self.params.get('short_window', 12)
-        long_window = self.params.get('long_window', 26)
-        signal_window = self.params.get('signal_window', 9)
-
-        if not (isinstance(short_window,int) and isinstance(long_window,int) and isinstance(signal_window,int) and \
-                short_window > 0 and long_window > 0 and signal_window > 0 and long_window > short_window):
-            logger.error(f'{self.name}: Invalid MACD parameters.')
-            return 'hold'
-
-        if len(ohlc_data) < long_window + signal_window:
-             logger.warning(f'{self.name}: Data length ({len(ohlc_data)}) insufficient for MACD calc.')
-             return 'hold'
-
-        macd_line, signal_line, _ = calculate_macd(ohlc_data['close'], short_window, long_window, signal_window)
-
-        if macd_line.empty or signal_line.empty or len(macd_line) < 1 or len(signal_line) < 1:
-            return 'hold'
-
-        current_macd = macd_line.iloc[-1]
-        current_signal = signal_line.iloc[-1]
-
-        # Simplified logic (no crossover condition)
-        if current_macd > current_signal:
-            logger.info(f'{self.name}: Buy signal generated (MACD Line > Signal Line).')
-            return 'buy'
-        if current_macd < current_signal:
-            logger.info(f'{self.name}: Sell signal generated (MACD Line < Signal Line).')
-            return 'sell'
-
+        if 'close' not in ohlc_data.columns: return 'hold'
+        short_w = self.params.get('short_window', 12); long_w = self.params.get('long_window', 26); signal_w = self.params.get('signal_window', 9)
+        if not (isinstance(short_w,int) and isinstance(long_w,int) and isinstance(signal_w,int) and short_w > 0 and long_w > 0 and signal_w > 0 and long_w > short_w): return 'hold'
+        if len(ohlc_data) < long_w + signal_w: return 'hold'
+        macd_line, signal_line, _ = calculate_macd(ohlc_data['close'], short_w, long_w, signal_w)
+        if macd_line.empty or signal_line.empty or len(macd_line) < 1 or len(signal_line) < 1: return 'hold'
+        current_macd = macd_line.iloc[-1]; current_signal = signal_line.iloc[-1]
+        if current_macd > current_signal: return 'buy'
+        if current_macd < current_signal: return 'sell'
         return 'hold'
 
 class BollingerBandsStrategy(Strategy):
     def __init__(self, params=None):
-        # Default params match specification
-        default_params = {'bb_window': 20, 'bb_std_dev': 2}
+        default_params = {'bb_window': 20, 'bb_std_dev': 2, 'symbol': 'BTCUSDT', 'default_quantity': 0.001, 'order_type': Client.ORDER_TYPE_MARKET}
         if params: default_params.update(params)
         super().__init__('BollingerBands', default_params)
-
-    def generate_signals(self, ohlc_data: pd.DataFrame): # Logic remains the same as previous step
-        logger.info(f'{self.name}: Generating signals with params {self.params}')
-        if 'close' not in ohlc_data.columns:
-            logger.error(f'{self.name}: OHLC data must contain a "close" column.')
-            return 'hold'
-
-        window = self.params.get('bb_window', 20)
-        num_std_dev = self.params.get('bb_std_dev', 2)
-
-        if not (isinstance(window, int) and window > 0 and isinstance(num_std_dev, (int,float)) and num_std_dev > 0):
-            logger.error(f'{self.name}: Invalid Bollinger Bands parameters.')
-            return 'hold'
-
-        if len(ohlc_data) < window:
-            logger.warning(f'{self.name}: Data length ({len(ohlc_data)}) insufficient for BB window {window}.')
-            return 'hold'
-
+    def generate_signals(self, ohlc_data: pd.DataFrame):
+        if 'close' not in ohlc_data.columns: return 'hold'
+        window = self.params.get('bb_window', 20); num_std_dev = self.params.get('bb_std_dev', 2)
+        if not (isinstance(window, int) and window > 0 and isinstance(num_std_dev, (int,float)) and num_std_dev > 0): return 'hold'
+        if len(ohlc_data) < window: return 'hold'
         upper_band, _, lower_band = calculate_bollinger_bands(ohlc_data['close'], window, num_std_dev)
-
-        if upper_band.empty or lower_band.empty or len(upper_band) < 1 or len(lower_band) < 1:
-            return 'hold'
-
-        current_close = ohlc_data['close'].iloc[-1]
-        current_lower_band = lower_band.iloc[-1]
-        current_upper_band = upper_band.iloc[-1]
-
-        if current_close <= current_lower_band:
-            logger.info(f'{self.name}: Buy signal generated (Price <= Lower BB).')
-            return 'buy'
-        if current_close >= current_upper_band:
-            logger.info(f'{self.name}: Sell signal generated (Price >= Upper BB).')
-            return 'sell'
-
+        if upper_band.empty or lower_band.empty or len(upper_band) < 1 or len(lower_band) < 1: return 'hold'
+        current_close = ohlc_data['close'].iloc[-1]; current_lower_band = lower_band.iloc[-1]; current_upper_band = upper_band.iloc[-1]
+        if current_close <= current_lower_band: return 'buy'
+        if current_close >= current_upper_band: return 'sell'
         return 'hold'
 
 class StochasticOscillatorStrategy(Strategy):
     def __init__(self, params=None):
-        # Adjusted default_params keys
-        default_params = {'k_window': 14, 'd_window': 3, 'oversold_level': 20, 'overbought_level': 80}
+        default_params = {'k_window': 14, 'd_window': 3, 'oversold_level': 20, 'overbought_level': 80, 'symbol': 'BTCUSDT', 'default_quantity': 0.001, 'order_type': Client.ORDER_TYPE_MARKET}
         if params: default_params.update(params)
         super().__init__('StochasticOscillator', default_params)
-
     def generate_signals(self, ohlc_data: pd.DataFrame):
-        logger.info(f'{self.name}: Generating signals with params {self.params} using simplified logic.')
-        required_cols = ['high', 'low', 'close']
-        if not all(col in ohlc_data.columns for col in required_cols):
-            logger.error(f'{self.name}: OHLC data must contain "high", "low", and "close" columns.')
-            return 'hold'
-
-        k_window = self.params.get('k_window', 14)
-        d_window = self.params.get('d_window', 3) # %D is calculated but not used in this simplified logic
-        oversold_level = self.params.get('oversold_level', 20) # Adjusted key
-        overbought_level = self.params.get('overbought_level', 80) # Adjusted key
-
-
-        if not (isinstance(k_window,int) and k_window > 0 and isinstance(d_window,int) and d_window > 0):
-            logger.error(f'{self.name}: Invalid Stochastic Oscillator parameters.')
-            return 'hold'
-
-        if len(ohlc_data) < k_window :
-             logger.warning(f'{self.name}: Data length ({len(ohlc_data)}) insufficient for Stoch %K calc.')
-             return 'hold'
-
-        # %D (percent_d) is calculated by calculate_stochastic_oscillator but not used in this simplified logic
-        percent_k, _ = calculate_stochastic_oscillator(ohlc_data['high'], ohlc_data['low'], ohlc_data['close'], k_window, d_window)
-
-        if percent_k.empty or len(percent_k) < 1:
-            return 'hold'
-
+        req_cols = ['high', 'low', 'close'];
+        if not all(col in ohlc_data.columns for col in req_cols): return 'hold'
+        k_w = self.params.get('k_window', 14); d_w = self.params.get('d_window', 3); ovs_lvl = self.params.get('oversold_level', 20); ovb_lvl = self.params.get('overbought_level', 80)
+        if not (isinstance(k_w,int) and k_w > 0 and isinstance(d_w,int) and d_w > 0): return 'hold'
+        if len(ohlc_data) < k_w : return 'hold'
+        percent_k, _ = calculate_stochastic_oscillator(ohlc_data['high'], ohlc_data['low'], ohlc_data['close'], k_w, d_w)
+        if percent_k.empty or len(percent_k) < 1: return 'hold'
         current_k = percent_k.iloc[-1]
-
-        # Simplified logic using only %K and levels
-        if current_k < oversold_level:
-            logger.info(f'{self.name}: Buy signal generated (Stochastic %K < {oversold_level}).')
-            return 'buy'
-        if current_k > overbought_level:
-            logger.info(f'{self.name}: Sell signal generated (Stochastic %K > {overbought_level}).')
-            return 'sell'
-
+        if current_k < ovs_lvl: return 'buy'
+        if current_k > ovb_lvl: return 'sell'
         return 'hold'
