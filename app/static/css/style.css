@@ -1,0 +1,8 @@
+/* Basic body styling */
+body {
+    font-family: Arial, sans-serif;
+    padding-top: 56px; /* Adjust for fixed navbar */
+}
+.container {
+    padding-top: 20px;
+}

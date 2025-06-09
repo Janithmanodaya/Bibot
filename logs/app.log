@@ -1,0 +1,3 @@
+2025-06-09 15:22:26,073 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 15:22:27,265 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 15:22:27,270 - app.routes.main_routes - INFO - Serving index page [in /app/app/routes/main_routes.py:9]
