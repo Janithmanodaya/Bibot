@@ -1,0 +1,6 @@
+Flask
+requests
+pandas
+cryptography
+python-binance
+flask-socketio
