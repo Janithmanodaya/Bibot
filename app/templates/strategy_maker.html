@@ -1,6 +1,272 @@
 {% extends "base.html" %}
 {% block title %}Strategy Maker - Trading Bot{% endblock %}
+
 {% block content %}
-<h2>Strategy Making Window</h2>
-<p>Create custom strategies with indicators (e.g., MA, RSI) and TP/SL settings. Select predefined strategies.</p>
+<div class="container">
+    <h2>Strategy Maker</h2>
+    <hr>
+
+    <div class="row">
+        <!-- Predefined Strategies Section -->
+        <div class="col-md-6">
+            <h3>Predefined Strategies</h3>
+            <form id="predefined-strategy-form">
+                <div class="form-group">
+                    <label for="select-predefined-strategy">Select Strategy:</label>
+                    <select class="form-control" id="select-predefined-strategy">
+                        <option value="">-- Select a Strategy --</option>
+                        <option value="ma_crossover">Moving Average Crossover</option>
+                        <option value="rsi">RSI Overbought/Oversold</option>
+                        <option value="macd">MACD Signal</option>
+                        <option value="bollinger">Bollinger Bands</option>
+                        <option value="stochastic">Stochastic Oscillator</option>
+                    </select>
+                </div>
+                <div id="predefined-strategy-params">
+                    <!-- Parameters for selected predefined strategy will be loaded here by JS -->
+                </div>
+                <button type="submit" class="btn btn-primary">Apply Strategy</button>
+            </form>
+        </div>
+
+        <!-- Custom Strategy Builder Section -->
+        <div class="col-md-6">
+            <h3>Custom Strategy Builder</h3>
+            <form id="custom-strategy-form">
+                <div class="form-group">
+                    <label for="custom-strategy-name">Strategy Name:</label>
+                    <input type="text" class="form-control" id="custom-strategy-name" placeholder="e.g., My Awesome Strategy">
+                </div>
+
+                <!-- Indicator Configuration -->
+                <h4>Indicators</h4>
+                <div id="indicators-config-area">
+                    <p class="text-muted">Indicator configuration UI will be here.</p>
+                </div>
+                <button type="button" class="btn btn-info btn-sm mb-3" id="add-indicator-btn">Add Indicator</button>
+
+                <!-- Buy Conditions -->
+                <h4>Buy Conditions</h4>
+                <div id="buy-conditions-area">
+                     <p class="text-muted">Buy condition builder UI will be here.</p>
+                </div>
+                <button type="button" class="btn btn-success btn-sm mb-3" id="add-buy-condition-btn">Add Buy Condition</button>
+
+                <!-- Sell Conditions -->
+                <h4>Sell Conditions</h4>
+                <div id="sell-conditions-area">
+                    <p class="text-muted">Sell condition builder UI will be here.</p>
+                </div>
+                <button type="button" class="btn btn-danger btn-sm mb-3" id="add-sell-condition-btn">Add Sell Condition</button>
+
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        <label for="take-profit">Take Profit (% or value):</label>
+                        <input type="text" class="form-control" id="take-profit" placeholder="e.g., 5% or 0.001">
+                    </div>
+                    <div class="form-group col-md-6">
+                        <label for="stop-loss">Stop Loss (% or value):</label>
+                        <input type="text" class="form-control" id="stop-loss" placeholder="e.g., 2% or 0.0005">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Save Custom Strategy</button>
+            </form>
+
+            <!-- Inserted Saved Strategies Section Here -->
+            <div class="mt-5">
+                <h4>Saved Custom Strategies</h4>
+                <div id="saved-strategies-list-container">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="saved-strategies-tbody">
+                            <tr><td colspan="3">Loading saved strategies...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" id="refresh-saved-strategies-btn">Refresh List</button>
+                <div id="load-delete-strategy-status" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log("Strategy Maker JS loaded. Implementing save, list, load, delete custom strategies.");
+
+    const predefinedSelect = document.getElementById('select-predefined-strategy');
+    const predefinedParamsDiv = document.getElementById('predefined-strategy-params');
+    const customStrategyForm = document.getElementById('custom-strategy-form');
+    const strategyNameInput = document.getElementById('custom-strategy-name');
+
+    // --- Logic for predefined strategies ---
+    if(predefinedSelect) {
+        predefinedSelect.addEventListener('change', function() {
+            const strategyNameValue = this.value; // Value from select (e.g., ma_crossover)
+            predefinedParamsDiv.innerHTML = '';
+            if (!strategyNameValue) return;
+
+            // Map UI value to actual strategy name for API
+            const apiStrategyNameMap = {
+                "ma_crossover": "MovingAverageCrossover",
+                "rsi": "RSIOverboughtOversold",
+                "macd": "MACDSignal",
+                "bollinger": "BollingerBands",
+                "stochastic": "StochasticOscillator"
+            };
+            const apiStrategyName = apiStrategyNameMap[strategyNameValue] || strategyNameValue;
+
+            fetch(`/api/strategies/parameters?strategy_name=${apiStrategyName}`)
+                .then(response => response.json())
+                .then(params => {
+                    if (params.error) {
+                        predefinedParamsDiv.innerHTML = `<p class="text-danger">${params.error}</p>`; return;
+                    }
+                    for (const key in params) {
+                        const paramDiv = document.createElement('div');
+                        paramDiv.classList.add('form-group');
+                        paramDiv.innerHTML = `
+                            <label for="param-${key}">${key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:</label>
+                            <input type="text" class="form-control" id="param-${key}" name="param_${key}" value="${params[key]}">
+                        `;
+                        predefinedParamsDiv.appendChild(paramDiv);
+                    }
+                }).catch(err => {
+                    console.error("Error fetching strategy params:", err);
+                    predefinedParamsDiv.innerHTML = '<p class="text-danger">Could not load parameters.</p>';
+                });
+        });
+    }
+
+    // --- Logic for Saving Custom Strategy ---
+    if (customStrategyForm) {
+        customStrategyForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            const strategyName = strategyNameInput ? strategyNameInput.value : 'Unnamed Strategy';
+            const description = "Custom strategy created via UI.";
+            const placeholderConfiguration = {
+                "indicators_config": [{"instance_id": "rsi14_custom", "indicator_id": "RSI", "parameters": {"window": 14}, "output_value_to_use": "rsi" }],
+                "buy_conditions_group": {"logical_operator": "AND", "conditions": [{"indicator_instance_id": "rsi14_custom", "output_key":"rsi", "comparison_operator": "<", "value": 35}], "sub_groups": []},
+                "sell_conditions_group": {"logical_operator": "OR", "conditions": [{"indicator_instance_id": "rsi14_custom", "output_key":"rsi", "comparison_operator": ">", "value": 65}], "sub_groups": []}
+            };
+            const strategyData = { name: strategyName, description: description, configuration: placeholderConfiguration };
+
+            let statusDiv = document.getElementById('custom-strategy-status'); // This was from previous subtask, ensure it exists or adapt
+            if (!statusDiv) {
+                statusDiv = document.createElement('div'); statusDiv.id = 'custom-strategy-status'; statusDiv.classList.add('mt-3');
+                // Place it after the form or near the save button for visibility
+                 customStrategyForm.parentNode.insertBefore(statusDiv, customStrategyForm.nextSibling);
+            }
+            statusDiv.innerHTML = '<p class="text-info">Saving strategy...</p>';
+
+            fetch('/api/strategies/custom', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(strategyData) })
+            .then(response => response.json().then(body => ({ status: response.status, body: body })))
+            .then(result => {
+                if (result.status === 201) {
+                    statusDiv.innerHTML = `<p class="alert alert-success">Strategy '${result.body.name}' saved (ID: ${result.body.id})</p>`;
+                    if(strategyNameInput) strategyNameInput.value = '';
+                    fetchSavedStrategies(); // Refresh list after saving
+                } else {
+                    statusDiv.innerHTML = `<p class="alert alert-danger">Error saving: ${result.body.error || 'Unknown error'}</p>`;
+                }
+            }).catch(error => {
+                console.error('Error saving custom strategy:', error);
+                statusDiv.innerHTML = '<p class="alert alert-danger">Save error. Check console.</p>';
+            });
+        });
+    }
+
+    // --- New Logic for Listing, Loading, Deleting Custom Strategies ---
+    const savedStrategiesTbody = document.getElementById('saved-strategies-tbody');
+    const refreshBtn = document.getElementById('refresh-saved-strategies-btn');
+    const loadDeleteStatusDiv = document.getElementById('load-delete-strategy-status');
+
+    async function fetchSavedStrategies() {
+        if (!savedStrategiesTbody) return;
+        savedStrategiesTbody.innerHTML = '<tr><td colspan="3">Refreshing...</td></tr>';
+        if(loadDeleteStatusDiv) loadDeleteStatusDiv.innerHTML = '';
+
+        try {
+            const response = await fetch('/api/strategies/custom');
+            if (!response.ok) throw new Error(`API error: ${response.status}`);
+            const strategies = await response.json();
+            savedStrategiesTbody.innerHTML = '';
+            if (strategies.length === 0) {
+                savedStrategiesTbody.innerHTML = '<tr><td colspan="3">No custom strategies saved yet.</td></tr>';
+                return;
+            }
+            strategies.forEach(s => {
+                const row = savedStrategiesTbody.insertRow();
+                row.insertCell().textContent = s.name;
+                row.insertCell().textContent = s.description || '';
+                const actionsCell = row.insertCell();
+                actionsCell.innerHTML = `
+                    <button class="btn btn-sm btn-info load-strategy-btn" data-id="${s.id}">Load</button>
+                    <button class="btn btn-sm btn-danger delete-strategy-btn" data-id="${s.id}">Delete</button>
+                `;
+            });
+        } catch (error) {
+            console.error("Error fetching saved strategies:", error);
+            savedStrategiesTbody.innerHTML = '<tr><td colspan="3" class="text-danger">Could not load strategies.</td></tr>';
+        }
+    }
+
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', fetchSavedStrategies);
+    }
+
+    if (savedStrategiesTbody) {
+        savedStrategiesTbody.addEventListener('click', async function(event) {
+            const target = event.target;
+            const strategyId = target.dataset.id;
+            if (!strategyId) return;
+
+            if(loadDeleteStatusDiv) loadDeleteStatusDiv.innerHTML = '';
+
+            if (target.classList.contains('load-strategy-btn')) {
+                if(loadDeleteStatusDiv) loadDeleteStatusDiv.innerHTML = `<p class="text-info">Loading strategy ID ${strategyId}...</p>`;
+                try {
+                    const response = await fetch(`/api/strategies/custom/${strategyId}`);
+                    if (!response.ok) throw new Error(`API error: ${response.status}`);
+                    const strategy = await response.json();
+
+                    if (strategyNameInput) strategyNameInput.value = strategy.name;
+                    console.log("Loaded configuration (placeholder for UI population):", strategy.configuration);
+                    if(loadDeleteStatusDiv) loadDeleteStatusDiv.innerHTML = `<p class="alert alert-success">Strategy '${strategy.name}' loaded. Configuration logged to console.</p>`;
+                    if (customStrategyForm) customStrategyForm.scrollIntoView({behavior: "smooth"});
+
+                } catch (error) {
+                    console.error(`Error loading strategy ${strategyId}:`, error);
+                    if(loadDeleteStatusDiv) loadDeleteStatusDiv.innerHTML = `<p class="alert alert-danger">Could not load strategy ${strategyId}.</p>`;
+                }
+            } else if (target.classList.contains('delete-strategy-btn')) {
+                if (!confirm(`Are you sure you want to delete strategy ID ${strategyId}?`)) return;
+                if(loadDeleteStatusDiv) loadDeleteStatusDiv.innerHTML = `<p class="text-info">Deleting strategy ID ${strategyId}...</p>`;
+                try {
+                    const response = await fetch(`/api/strategies/custom/${strategyId}`, { method: 'DELETE' });
+                    if (!response.ok) {
+                         const errBody = await response.json().catch(() => ({error: "Unknown error during delete."}));
+                         throw new Error(errBody.error || `API error: ${response.status}`);
+                    }
+                    if(loadDeleteStatusDiv) loadDeleteStatusDiv.innerHTML = `<p class="alert alert-success">Strategy ID ${strategyId} deleted.</p>`;
+                    fetchSavedStrategies();
+                } catch (error) {
+                    console.error(`Error deleting strategy ${strategyId}:`, error);
+                    if(loadDeleteStatusDiv) loadDeleteStatusDiv.innerHTML = `<p class="alert alert-danger">Could not delete strategy ${strategyId}: ${error.message}</p>`;
+                }
+            }
+        });
+    }
+
+    fetchSavedStrategies(); // Initial fetch
+});
+</script>
 {% endblock %}

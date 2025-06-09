@@ -1,3 +1,164 @@
 2025-06-09 15:22:26,073 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
 2025-06-09 15:22:27,265 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
 2025-06-09 15:22:27,270 - app.routes.main_routes - INFO - Serving index page [in /app/app/routes/main_routes.py:9]
+2025-06-09 16:34:21,698 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:34:22,867 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 16:35:19,944 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:35:55,741 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:35:56,992 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 16:36:00,803 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:36:02,104 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 16:36:02,116 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit) [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1096]
+2025-06-09 16:36:02,117 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("user_settings") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:36:02,117 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:36:02,119 - sqlalchemy.engine.Engine - INFO - PRAGMA temp.table_info("user_settings") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:36:02,119 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:36:02,120 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("trade_history") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:36:02,120 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:36:02,121 - sqlalchemy.engine.Engine - INFO - PRAGMA temp.table_info("trade_history") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:36:02,121 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:36:02,121 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("ohlc_data") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:36:02,121 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:36:02,121 - sqlalchemy.engine.Engine - INFO - PRAGMA temp.table_info("ohlc_data") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:36:02,121 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:36:02,123 - sqlalchemy.engine.Engine - INFO -
+CREATE TABLE user_settings (
+	id INTEGER NOT NULL,
+	user_id INTEGER NOT NULL,
+	selected_exchange VARCHAR(50),
+	encrypted_api_key VARCHAR(256),
+	encrypted_api_secret VARCHAR(256),
+	PRIMARY KEY (id),
+	UNIQUE (user_id)
+)
+
+ [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:36:02,123 - sqlalchemy.engine.Engine - INFO - [no key 0.00030s] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:36:02,128 - sqlalchemy.engine.Engine - INFO -
+CREATE TABLE trade_history (
+	id INTEGER NOT NULL,
+	order_id VARCHAR(100) NOT NULL,
+	exchange VARCHAR(50) NOT NULL,
+	symbol VARCHAR(20) NOT NULL,
+	timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+	type VARCHAR(20),
+	side VARCHAR(10),
+	price FLOAT,
+	quantity FLOAT,
+	status VARCHAR(20),
+	PRIMARY KEY (id),
+	UNIQUE (order_id)
+)
+
+ [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:36:02,132 - sqlalchemy.engine.Engine - INFO - [no key 0.00406s] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:36:02,136 - sqlalchemy.engine.Engine - INFO -
+CREATE TABLE ohlc_data (
+	id INTEGER NOT NULL,
+	exchange VARCHAR(50) NOT NULL,
+	symbol VARCHAR(20) NOT NULL,
+	timeframe VARCHAR(10) NOT NULL,
+	open_time BIGINT NOT NULL,
+	open_price FLOAT,
+	high_price FLOAT,
+	low_price FLOAT,
+	close_price FLOAT,
+	volume FLOAT,
+	close_time BIGINT,
+	PRIMARY KEY (id),
+	CONSTRAINT _exchange_symbol_timeframe_opentime_uc UNIQUE (exchange, symbol, timeframe, open_time)
+)
+
+ [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:36:02,136 - sqlalchemy.engine.Engine - INFO - [no key 0.00018s] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:36:02,140 - sqlalchemy.engine.Engine - INFO - COMMIT [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1139]
+2025-06-09 16:37:49,277 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:38:08,850 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:38:09,817 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 16:38:09,818 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit) [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1096]
+2025-06-09 16:38:09,819 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("user_settings") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:38:09,819 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:38:09,819 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("trade_history") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:38:09,820 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:38:09,820 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("ohlc_data") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:38:09,820 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:38:09,820 - sqlalchemy.engine.Engine - INFO - COMMIT [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1139]
+2025-06-09 16:40:00,418 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:40:01,627 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 16:40:01,629 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit) [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1096]
+2025-06-09 16:40:01,630 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("user_settings") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:40:01,630 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:40:01,631 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("trade_history") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:40:01,632 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:40:01,632 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("ohlc_data") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:40:01,632 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:40:01,632 - sqlalchemy.engine.Engine - INFO - COMMIT [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1139]
+2025-06-09 16:42:31,032 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:42:32,385 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 16:42:32,387 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit) [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1096]
+2025-06-09 16:42:32,387 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("user_settings") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:42:32,388 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:42:32,389 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("trade_history") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:42:32,389 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:42:32,389 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("ohlc_data") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:42:32,389 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:42:32,390 - sqlalchemy.engine.Engine - INFO - COMMIT [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1139]
+2025-06-09 16:40:59,790 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:41:01,490 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 16:41:01,493 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit) [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1096]
+2025-06-09 16:41:01,493 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("user_settings") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:41:01,494 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:41:01,497 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("trade_history") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:41:01,497 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:41:01,498 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("ohlc_data") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:41:01,498 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:41:01,498 - sqlalchemy.engine.Engine - INFO - COMMIT [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1139]
+2025-06-09 16:45:09,849 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:45:11,706 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 16:45:11,710 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit) [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1096]
+2025-06-09 16:45:11,710 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("user_settings") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:45:11,711 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:45:11,715 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("trade_history") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:45:11,715 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:45:11,715 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("ohlc_data") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:45:11,715 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:45:11,716 - sqlalchemy.engine.Engine - INFO - COMMIT [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1139]
+2025-06-09 16:46:58,267 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:47:00,076 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 16:47:00,079 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit) [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1096]
+2025-06-09 16:47:00,081 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("user_settings") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:47:00,081 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:47:00,084 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("trade_history") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:47:00,084 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:47:00,085 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("ohlc_data") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:47:00,085 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:47:00,085 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("custom_strategies") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:47:00,086 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:47:00,086 - sqlalchemy.engine.Engine - INFO - PRAGMA temp.table_info("custom_strategies") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:47:00,086 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:47:00,087 - sqlalchemy.engine.Engine - INFO -
+CREATE TABLE custom_strategies (
+	id INTEGER NOT NULL,
+	user_id INTEGER NOT NULL,
+	name VARCHAR(100) NOT NULL,
+	description TEXT,
+	configuration JSON NOT NULL,
+	PRIMARY KEY (id),
+	FOREIGN KEY(user_id) REFERENCES user_settings (id)
+)
+
+ [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:47:00,087 - sqlalchemy.engine.Engine - INFO - [no key 0.00019s] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:47:00,095 - sqlalchemy.engine.Engine - INFO - COMMIT [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1139]
+2025-06-09 16:47:59,474 - app - INFO - Logging configured: Console, File, and SocketIOHandler prepared. [in /app/app/__init__.py:62]
+2025-06-09 16:48:01,651 - app - INFO - Application setup complete. Blueprints registered. [in /app/app/__init__.py:100]
+2025-06-09 16:48:01,653 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit) [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1096]
+2025-06-09 16:48:01,653 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("user_settings") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:48:01,653 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:48:01,654 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("trade_history") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:48:01,654 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:48:01,655 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("ohlc_data") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:48:01,655 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:48:01,655 - sqlalchemy.engine.Engine - INFO - PRAGMA main.table_info("custom_strategies") [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1895]
+2025-06-09 16:48:01,655 - sqlalchemy.engine.Engine - INFO - [raw sql] () [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1900]
+2025-06-09 16:48:01,656 - sqlalchemy.engine.Engine - INFO - COMMIT [in /home/swebot/.local/lib/python3.10/site-packages/sqlalchemy/engine/base.py:1139]

@@ -1,8 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Home - Trading Bot{% endblock %}
+{% block title %}Welcome - Trading Bot{% endblock %}
+
 {% block content %}
-<h1>Welcome to the Automated Trading Bot</h1>
-<p>This is the main page.</p>
-<button id="startStrategy" class="btn btn-success mr-2">Start Strategy</button>
-<button id="stopStrategy" class="btn btn-danger">Stop Strategy</button>
+<div class="container text-center">
+    <h1 class="mt-5">Welcome to Your Trading Bot</h1>
+    <p class="lead">Manage your automated trading strategies with ease.</p>
+    <div class="mt-4">
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary btn-lg mr-2">Go to Dashboard</a>
+        <a href="{{ url_for('main.settings_page') }}" class="btn btn-secondary btn-lg">Configure Settings</a>
+    </div>
+</div>
 {% endblock %}

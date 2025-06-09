@@ -1,5 +1,5 @@
 from .exchange_service import ExchangeService
-from binance.client import Client
+from binance.client import Client # Corrected imports
 from binance.exceptions import BinanceAPIException, BinanceRequestException
 import logging
 
@@ -44,13 +44,31 @@ class BinanceService(ExchangeService):
         try:
             params = {
                 'symbol': symbol,
-                'side': side, # Client.SIDE_BUY or Client.SIDE_SELL
-                'type': type, # Client.ORDER_TYPE_LIMIT, Client.ORDER_TYPE_MARKET etc.
+                'side': side, # Should be Client.SIDE_BUY or Client.SIDE_SELL passed as 'side' argument
+                'type': type, # Should be Client.ORDER_TYPE_LIMIT etc. passed as 'type' argument
                 'quantity': quantity
             }
+            # Revert to using Client.CONSTANT style, assuming 'type' and 'side' are passed correctly
             if type == Client.ORDER_TYPE_LIMIT:
-                params['timeInForce'] = Client.TIME_IN_FORCE_GTC # Good Till Cancelled
+                params['timeInForce'] = Client.TIME_IN_FORCE_GTC
                 params['price'] = price
+
+            # Example if other constants were needed:
+            # elif type == Client.ORDER_TYPE_MARKET:
+            #     pass
+            # elif side == Client.SIDE_SELL:
+            #     pass
+
+            # Add other order type conditions if necessary, e.g. for stop loss or take profit orders
+            # For example:
+            # if type in [ORDER_TYPE_STOP_LOSS_LIMIT, ORDER_TYPE_TAKE_PROFIT_LIMIT]:
+            #     params['stopPrice'] = stop_price # Ensure stop_price is passed to the method
+            #     params['price'] = price # Limit price for stop loss/take profit limit orders
+            #     params['timeInForce'] = TIME_IN_FORCE_GTC
+            # elif type == ORDER_TYPE_MARKET:
+            #     # Market orders don't need price or timeInForce for basic execution
+            #     pass
+
 
             if test_order:
                 order = self.client.create_test_order(**params)
@@ -81,4 +99,34 @@ class BinanceService(ExchangeService):
             return candles
         except (BinanceAPIException, BinanceRequestException) as e:
             logger.error(f'Error fetching Binance historical candles for {symbol}: {e}')
+            return []
+
+    def get_order(self, symbol, order_id):
+        logger.info(f'Fetching order {order_id} for symbol {symbol}')
+        try:
+            order = self.client.get_order(symbol=symbol, orderId=order_id)
+            logger.info(f'Successfully fetched order {order_id} for {symbol}: {order}')
+            return order
+        except (BinanceAPIException, BinanceRequestException) as e:
+            logger.error(f'Error fetching Binance order {order_id} for {symbol}: {e}')
+            return None
+
+    def cancel_order(self, symbol, order_id):
+        logger.info(f'Cancelling order {order_id} for symbol {symbol}')
+        try:
+            result = self.client.cancel_order(symbol=symbol, orderId=order_id)
+            logger.info(f'Successfully cancelled order {order_id} for {symbol}: {result}')
+            return result
+        except (BinanceAPIException, BinanceRequestException) as e:
+            logger.error(f'Error cancelling Binance order {order_id} for {symbol}: {e}')
+            return None
+
+    def get_open_orders(self, symbol=None):
+        logger.info(f'Fetching open orders for symbol: {symbol if symbol else "all symbols"}')
+        try:
+            open_orders = self.client.get_open_orders(symbol=symbol) if symbol else self.client.get_open_orders()
+            logger.info(f'Successfully fetched {len(open_orders)} open orders for {symbol if symbol else "all symbols"}')
+            return open_orders
+        except (BinanceAPIException, BinanceRequestException) as e:
+            logger.error(f'Error fetching Binance open orders for {symbol if symbol else "all symbols"}: {e}')
             return []

@@ -17,3 +17,12 @@ class ExchangeService:
 
     def get_historical_candles(self, symbol, interval, limit=1000):
         raise NotImplementedError
+
+    def get_order(self, symbol, order_id):
+        raise NotImplementedError
+
+    def cancel_order(self, symbol, order_id):
+        raise NotImplementedError
+
+    def get_open_orders(self, symbol=None):
+        raise NotImplementedError

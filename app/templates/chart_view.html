@@ -1,30 +1,52 @@
 {% extends "base.html" %}
 {% block title %}Chart View - Trading Bot{% endblock %}
+
 {% block content %}
-<h2>Chart View</h2>
-<p>Real-time price charts with indicators and trading signals, adjustable by timeframe.</p>
-<canvas id="priceChart"></canvas>
+<div class="container">
+    <h2>Chart View</h2>
+    <hr>
+    <div class="form-row mb-3">
+        <div class="col-md-3">
+            <label for="chart-symbol">Symbol:</label>
+            <input type="text" class="form-control" id="chart-symbol" value="BTCUSDT">
+        </div>
+        <div class="col-md-3">
+            <label for="chart-timeframe">Timeframe:</label>
+            <select class="form-control" id="chart-timeframe">
+                <option value="1m">1 Minute</option>
+                <option value="5m" selected>5 Minutes</option>
+                <option value="15m">15 Minutes</option>
+                <option value="1h">1 Hour</option>
+                <option value="4h">4 Hours</option>
+                <option value="1d">1 Day</option>
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label for="chart-indicators">Indicators: (Display only, actual overlay in future step)</label>
+            <select multiple class="form-control" id="chart-indicators" disabled>
+                <option value="sma_20">SMA(20)</option>
+                <option value="ema_50">EMA(50)</option>
+            </select>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <button class="btn btn-primary btn-block" id="load-chart-btn">Load Chart</button>
+        </div>
+    </div>
+    <div style="position: relative; height:60vh; width:100%;">
+        <canvas id="priceChart"></canvas>
+    </div>
+</div>
 {% endblock %}
+
 {% block scripts %}
+<!-- charts.js is included in base.html and contains the primary logic -->
+<!-- This block can be used for any page-specific chart initializations if needed -->
 <script>
-document.addEventListener("DOMContentLoaded", function() {
-    const ctx = document.getElementById("priceChart") ? document.getElementById("priceChart").getContext("2d") : null;
-    if (ctx) {
-        new Chart(ctx, {
-            type: "line",
-            data: {
-                labels: ["January", "February", "March", "April", "May", "June"],
-                datasets: [{
-                    label: "Sample Price Data",
-                    data: [65, 59, 80, 81, 56, 55],
-                    fill: false,
-                    borderColor: "rgb(75, 192, 192)",
-                    tension: 0.1
-                }]
-            },
-            options: {}
-        });
-    }
-});
+    // Example: Trigger default chart load if charts.js doesn't do it.
+    // document.addEventListener('DOMContentLoaded', function() {
+    //     if (document.getElementById('load-chart-btn')) {
+    //         // document.getElementById('load-chart-btn').click(); // Uncomment to auto-load chart
+    //     }
+    // });
 </script>
 {% endblock %}

@@ -1,6 +1,98 @@
 {% extends "base.html" %}
 {% block title %}Settings - Trading Bot{% endblock %}
+
 {% block content %}
-<h2>Settings Page</h2>
-<p>Manage API keys and exchange selection.</p>
+<div class="container">
+    <h2>Settings</h2>
+    <hr>
+    <form id="settings-form">
+        <div class="form-group">
+            <label for="exchange-select">Exchange:</label>
+            <select class="form-control" id="exchange-select" name="exchange">
+                <option value="binance" selected>Binance</option>
+                <!-- <option value="gemini">Gemini (Future)</option> -->
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="api-key">API Key:</label>
+            <input type="text" class="form-control" id="api-key" name="api_key" placeholder="Enter your API key">
+        </div>
+        <div class="form-group">
+            <label for="api-secret">API Secret:</label>
+            <input type="password" class="form-control" id="api-secret" name="api_secret" placeholder="Enter your API secret">
+        </div>
+        <div class="form-group form-check">
+            <input type="checkbox" class="form-check-input" id="use-testnet" name="use_testnet">
+            <label class="form-check-label" for="use-testnet">Use Testnet</label>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+    </form>
+    <div id="settings-status" class="mt-3"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const settingsForm = document.getElementById('settings-form');
+    const statusDiv = document.getElementById('settings-status');
+
+    // Load existing settings
+    fetch('/api/settings')
+        .then(response => response.json())
+        .then(data => {
+            if (data) {
+                document.getElementById('exchange-select').value = data.exchange || 'binance';
+                document.getElementById('api-key').value = data.api_key || '';
+                // Do not populate api-secret for security, user can re-enter if they want to change
+                // document.getElementById('api-secret').value = data.api_secret || '';
+                document.getElementById('use-testnet').checked = data.use_testnet || false;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading settings:', error);
+            statusDiv.innerHTML = '<div class="alert alert-danger">Error loading settings.</div>';
+        });
+
+    settingsForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        statusDiv.innerHTML = ''; // Clear previous status
+
+        const formData = new FormData(settingsForm);
+        const data = {
+            exchange: formData.get('exchange'),
+            api_key: formData.get('api_key'),
+            api_secret: formData.get('api_secret'), // Only send if user entered a new one
+            use_testnet: formData.get('use_testnet') === 'on' // FormData gives 'on' for checkbox
+        };
+
+        // If API secret is empty and was previously set, don't overwrite with empty string unless intended.
+        // For simplicity here, we send what's in the form. A real app might need more complex logic
+        // to only update secret if a new value is provided.
+        // If api_secret field is empty, we might not want to send it, or send an instruction to not change it.
+        // Current backend saves what it gets.
+
+        fetch('/api/settings', {
+            method: 'POST',
+            body: JSON.stringify(data),
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(response => response.json().then(body => ({ status: response.status, body: body })))
+        .then(result => {
+            if (result.status === 200 || result.status === 201) {
+                statusDiv.innerHTML = '<div class="alert alert-success">' + (result.body.message || 'Settings saved successfully!') + '</div>';
+                if (!data.api_secret) { // If secret was submitted empty, clear the form field
+                    document.getElementById('api-secret').value = '';
+                }
+            } else {
+                statusDiv.innerHTML = '<div class="alert alert-danger">' + (result.body.message || 'Error saving settings.') + '</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error saving settings:', error);
+            statusDiv.innerHTML = '<div class="alert alert-danger">Error saving settings.</div>';
+        });
+    });
+});
+</script>
 {% endblock %}

@@ -1,5 +1,5 @@
 from app import create_app, socketio # Import socketio
-from app.models import UserSetting, TradeHistory, OHLCData # For initdb
+from app.models import UserSettings, TradeHistory, OHLCData # For initdb
 from app import db # For initdb
 
 app = create_app()

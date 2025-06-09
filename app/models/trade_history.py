@@ -6,7 +6,8 @@ class TradeHistory(db.Model):
     order_id = db.Column(db.String(100), unique=True, nullable=False)
     exchange = db.Column(db.String(50), nullable=False)
     symbol = db.Column(db.String(20), nullable=False)
-    timestamp = db.Column(db.DateTime(timezone=True), server_default=func.now())
+    timestamp = db.Column(db.DateTime(timezone=True), nullable=True)
+    exchange_timestamp = db.Column(db.BigInteger, nullable=True) # To store exchange's trade time (e.g., ms Unix timestamp)
     type = db.Column(db.String(20))  # e.g., limit, market
     side = db.Column(db.String(10))  # e.g., buy, sell
     price = db.Column(db.Float)
