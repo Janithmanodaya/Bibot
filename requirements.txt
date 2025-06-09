@@ -4,3 +4,6 @@ pandas
 cryptography
 python-binance
 flask-socketio
+SQLAlchemy
+Flask-SQLAlchemy
+pytest
