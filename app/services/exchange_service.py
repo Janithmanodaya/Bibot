@@ -18,6 +18,9 @@ class ExchangeService:
     def get_historical_candles(self, symbol, interval, limit=1000):
         raise NotImplementedError
 
+    def get_total_account_equity_in_usdt(self):
+        raise NotImplementedError
+
     def get_order(self, symbol, order_id):
         raise NotImplementedError
 

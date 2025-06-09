@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request, current_app
-from app.services import db_service, binance_service, market_data_service, strategy_service
+from app.services import db_service, binance_service, market_data_service, strategy_service, technical_indicators
 from app.utils.encryption import ENCRYPTION_KEY
 from app.models import UserSettings
 import logging
@@ -88,40 +88,103 @@ def manage_settings():
 
 @bp.route('/dashboard_data', methods=['GET'])
 def get_dashboard_data():
-    # ... (content from previous version, unchanged by this subtask) ...
     logger.info("API /dashboard_data GET called")
     user_id = 1
+    trade_history_symbol_req = request.args.get('trade_history_symbol', default='BTCUSDT', type=str)
+
     bs = get_binance_service_instance(user_id)
     if not bs:
         return jsonify({
-            'balance': {}, 'open_trades': [], 'trade_history': [],
+            'balance': {},
+            'open_trades': [],
+            'trade_history': [],
             'error': 'API keys not configured or user settings not found.'
         }), 400
+
     try:
         balance = bs.get_account_balance() or {}
         open_trades = bs.get_open_orders() or []
-        trade_history = bs.get_trade_history(symbol='BTCUSDT') or []
-        return jsonify({ 'balance': balance, 'open_trades': open_trades, 'trade_history': trade_history })
+
+        logger.info(f"Fetching trade history for symbol: {trade_history_symbol_req}")
+        trade_history = bs.get_trade_history(symbol=trade_history_symbol_req) or []
+
+        return jsonify({
+            'balance': balance,
+            'open_trades': open_trades,
+            'trade_history': trade_history,
+            'trade_history_symbol_shown': trade_history_symbol_req # Include which symbol's history is returned
+        })
     except Exception as e:
-        logger.error(f"Error fetching dashboard data: {e}", exc_info=True)
+        logger.error(f"Error fetching dashboard data (symbol: {trade_history_symbol_req}): {e}", exc_info=True)
         return jsonify({'error': f'Failed to fetch dashboard data: {e}'}), 500
 
 @bp.route('/ohlc_data', methods=['GET'])
 def get_ohlc_data_api():
-    # ... (content from previous version, unchanged by this subtask) ...
     user_id = 1
     symbol = request.args.get('symbol', default='BTCUSDT', type=str)
-    interval = request.args.get('timeframe', default='1h', type=str)
-    limit = request.args.get('limit', default=100, type=int)
-    logger.info(f"API /ohlc_data GET called for {symbol}, interval {interval}, limit {limit}")
+    interval = request.args.get('timeframe', default='1h', type=str) # 'interval' for Binance, 'timeframe' in UI
+    limit = request.args.get('limit', default=200, type=int) # Increased default for indicator calc
+
+    # Get requested indicators, e.g., "sma_20,sma_50"
+    indicators_param = request.args.get('indicators', default='', type=str)
+    requested_indicators = [ind.strip() for ind in indicators_param.split(',') if ind.strip()]
+
+    logger.info(f"API /ohlc_data GET for {symbol}, interval {interval}, limit {limit}, indicators: {requested_indicators}")
+
     try:
-        db_candles = db_service.get_ohlc_data(exchange_name='binance', symbol=symbol, timeframe=interval, limit=limit, sort_order='desc')
-        if not db_candles or len(db_candles) < limit / 2:
-            market_data_service.fetch_and_store_candles_from_binance(user_id=user_id, symbol=symbol, interval=interval, limit=limit)
-            db_candles = db_service.get_ohlc_data(exchange_name='binance', symbol=symbol, timeframe=interval, limit=limit, sort_order='desc')
-        if db_candles and len(db_candles) > 0 and db_candles[0].open_time > db_candles[-1].open_time: db_candles.reverse() # Check if db_candles is not empty
-        chart_data = [{'x': c.open_time, 'o': c.open_price, 'h': c.high_price, 'l': c.low_price, 'c': c.close_price, 'v': c.volume} for c in db_candles]
-        return jsonify(chart_data)
+        db_candles = db_service.get_ohlc_data(
+            exchange_name='binance', symbol=symbol, timeframe=interval,
+            limit=limit + 50, # Fetch a bit more for indicator warmup if possible from DB
+            sort_order='asc' # Indicators usually need ascending data
+        )
+
+        if not db_candles or len(db_candles) < limit:
+            logger.info(f"Insufficient/no data in DB for {symbol}/{interval}. Fetching from exchange.")
+            market_data_service.fetch_and_store_candles_from_binance(
+                user_id=user_id, symbol=symbol, interval=interval,
+                limit=limit + 50
+            )
+            db_candles = db_service.get_ohlc_data(
+                exchange_name='binance', symbol=symbol, timeframe=interval,
+                limit=limit + 50, sort_order='asc'
+            )
+
+        if not db_candles:
+            return jsonify({'error': f'No OHLC data found for {symbol} {interval}'}), 404
+
+        ohlc_df = pd.DataFrame([{
+            'timestamp': candle.open_time,
+            'open': float(candle.open_price), 'high': float(candle.high_price),
+            'low': float(candle.low_price), 'close': float(candle.close_price),
+            'volume': float(candle.volume)
+        } for candle in db_candles])
+        ohlc_df = ohlc_df.sort_values(by='timestamp').reset_index(drop=True)
+
+        chart_data_ohlc = [{
+            'x': row['timestamp'], 'o': row['open'], 'h': row['high'], 'l': row['low'], 'c': row['close']
+        } for index, row in ohlc_df.iterrows()]
+
+        response_data = {'ohlc': chart_data_ohlc[-limit:]}
+
+        for ind_request in requested_indicators:
+            if ind_request.lower().startswith('sma_'):
+                try:
+                    window = int(ind_request.split('_')[1])
+                    if window > 0 and not ohlc_df['close'].empty and len(ohlc_df['close']) >= window:
+                        sma_series = technical_indicators.calculate_sma(ohlc_df['close'], window)
+                        sma_values = []
+                        for i, val in sma_series.items():
+                            if pd.notna(val) and i < len(ohlc_df):
+                                sma_values.append({'x': ohlc_df.iloc[i]['timestamp'], 'y': val})
+                        response_data[ind_request] = sma_values[-limit:]
+                    else:
+                        logger.warning(f"Cannot calculate {ind_request}: window {window} invalid or not enough data ({len(ohlc_df['close'])} points).")
+                        response_data[ind_request] = []
+                except Exception as e_ind:
+                    logger.error(f"Error calculating indicator {ind_request}: {e_ind}")
+                    response_data[ind_request] = []
+
+        return jsonify(response_data)
     except Exception as e:
         logger.error(f"Error fetching OHLC data for {symbol} {interval}: {e}", exc_info=True)
         return jsonify({'error': f'Failed to fetch OHLC data: {e}'}), 500

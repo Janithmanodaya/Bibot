@@ -32,6 +32,31 @@ class Strategy:
             logger.error(f"User settings not found for user_id {user_id}.")
             return {'status': 'error', 'reason': 'User settings not found.'}
 
+        # Max Drawdown Check (New)
+        peak_equity = getattr(user_settings, 'peak_account_equity', 0.0)
+        if peak_equity is None: peak_equity = 0.0 # Ensure peak_equity is float if None from DB
+        max_drawdown_pct = getattr(user_settings, 'max_account_drawdown_percentage', None)
+
+        if peak_equity > 0 and max_drawdown_pct is not None and max_drawdown_pct > 0:
+            logger.info(f"Performing Max Drawdown check. Peak Equity: {peak_equity}, Max Drawdown %: {max_drawdown_pct}")
+            current_total_equity = exchange_service_instance.get_total_account_equity_in_usdt()
+            if current_total_equity < peak_equity: # Only calculate drawdown if below peak
+                current_drawdown = ((peak_equity - current_total_equity) / peak_equity) * 100
+                logger.info(f"Current Equity: {current_total_equity:.2f} USDT, Current Drawdown: {current_drawdown:.2f}%")
+                if current_drawdown >= float(max_drawdown_pct):
+                    logger.critical(f"MAX DRAWDOWN LIMIT REACHED ({current_drawdown:.2f}% >= {max_drawdown_pct}%). Halting trades for user {user_id}.")
+                    # TODO: Implement actual halting mechanism (e.g., flag in DB, global var, notification)
+                    return {'status': 'error', 'reason': f'Max drawdown limit {max_drawdown_pct}% reached. Trading halted.'}
+            elif current_total_equity > peak_equity:
+                 # New peak equity detected, update it.
+                 logger.info(f"New peak equity detected: {current_total_equity:.2f} (old: {peak_equity:.2f}). Updating user settings.")
+                 # This save should ideally only update peak_equity without touching other potentially unsaved form fields.
+                 # For simplicity, we pass other fields as None which save_user_setting handles by not updating them.
+                 db_service.save_user_setting(user_id=user_id, peak_account_equity=current_total_equity)
+                 # Note: If user is editing settings form at same time, this could overwrite.
+                 # A dedicated db_service.update_peak_equity(user_id, new_peak) would be better.
+
+        # Continue with existing execute logic
         max_trade_size_pct = getattr(user_settings, 'max_trade_size_percentage_balance', None)
         default_stop_loss_pct = getattr(user_settings, 'default_stop_loss_percentage', None)
 

@@ -84,6 +84,62 @@ class BinanceService(ExchangeService):
             logger.error(f'An unexpected error occurred while fetching balance: {e}')
             return None
 
+    def get_total_account_equity_in_usdt(self):
+        logger.info("Calculating total account equity in USDT...")
+        # get_account_balance now returns a dict like {'BTC': '0.1', 'USDT': '1000', ...}
+        # where values are strings representing the 'free' balance.
+        # For equity calculation, we need free + locked, and the structure from client.get_account() is more suitable.
+        try:
+            account_info = self.client.get_account() # Fetches full balance details
+            if not account_info or 'balances' not in account_info:
+                logger.error("Could not retrieve comprehensive account info for equity calculation.")
+                return 0.0
+        except Exception as e:
+            logger.error(f"Error fetching account_info for equity calculation: {e}")
+            return 0.0
+
+        balances_details = account_info['balances'] # List of dicts: [{'asset': 'BTC', 'free': '0.1', 'locked': '0.05'}, ...]
+
+        total_usdt_value = 0.0
+
+        for balance_item in balances_details:
+            asset = balance_item['asset']
+            free = float(balance_item['free'])
+            locked = float(balance_item['locked'])
+            current_balance = free + locked
+
+            if current_balance == 0:
+                continue
+
+            if asset == 'USDT':
+                total_usdt_value += current_balance
+                # logger.debug(f"Added USDT balance: {current_balance}")
+                continue
+
+            # Skip known stablecoins that are not USDT but are pegged to USD, if not converting them via BTC or other pairs.
+            # Example: BUSD, USDC, DAI etc. might be treated as 1:1 with USDT or require specific pairs.
+            # For simplicity, if we have BUSD, and want total in USDT, we'd need BUSDUSDT price (usually ~1).
+            # The current logic tries AssetUSDT.
+
+            if asset.endswith('UP') or asset.endswith('DOWN') or asset.endswith('BEAR') or asset.endswith('BULL'):
+                 logger.warning(f"Skipping leveraged token {asset} in equity calculation for simplicity.")
+                 continue
+
+            symbol_usdt = asset + 'USDT'
+            try:
+                ticker = self.client.get_symbol_ticker(symbol=symbol_usdt)
+                price_in_usdt = float(ticker['price'])
+                value_in_usdt = current_balance * price_in_usdt
+                total_usdt_value += value_in_usdt
+                # logger.debug(f"Asset: {asset}, Balance: {current_balance}, Price (USDT): {price_in_usdt}, Value (USDT): {value_in_usdt}")
+            except BinanceAPIException as e:
+                logger.warning(f"Could not get USDT price for {asset} (symbol {symbol_usdt}): {e}. Skipping in equity calculation.")
+            except Exception as e_gen:
+                 logger.error(f"Unexpected error getting price for {symbol_usdt}: {e_gen}")
+
+        logger.info(f"Total estimated account equity: {total_usdt_value:.2f} USDT")
+        return total_usdt_value
+
     def get_trade_history(self, symbol=None):
         logger.info(f'Fetching trade history for symbol: {symbol if symbol else "all symbols"}')
         # Placeholder: Actual implementation will require symbol

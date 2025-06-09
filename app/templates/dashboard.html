@@ -12,7 +12,6 @@
         <div class="card">
             <div class="card-body">
                 <p><strong>Total Equity:</strong> <span id="total-equity">$0.00</span></p>
-                <!-- More balance details can be added here -->
                 <table class="table table-sm">
                     <thead>
                         <tr>
@@ -23,7 +22,6 @@
                         </tr>
                     </thead>
                     <tbody id="balance-details-table">
-                        <!-- Rows will be populated by JavaScript -->
                         <tr><td colspan="4">Loading balance...</td></tr>
                     </tbody>
                 </table>
@@ -49,13 +47,33 @@
                         </tr>
                     </thead>
                     <tbody id="open-trades-table">
-                        <!-- Rows will be populated by JavaScript -->
                         <tr><td colspan="7">No open trades or loading...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </section>
+
+    <!-- Trade History Symbol Selector -->
+    <div class="form-row mb-3 align-items-end">
+        <div class="col-md-4">
+            <label for="trade-history-symbol-select">Trade History Symbol:</label>
+            <select class="form-control" id="trade-history-symbol-select">
+                <option value="BTCUSDT" selected>BTCUSDT</option>
+                <option value="ETHUSDT">ETHUSDT</option>
+                <option value="BNBUSDT">BNBUSDT</option>
+                <option value="ADAUSDT">ADAUSDT</option>
+                <option value="SOLUSDT">SOLUSDT</option>
+                <!-- Add more common symbols or populate dynamically -->
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-primary btn-block" id="load-trade-history-btn">Load History</button>
+        </div>
+        <div class="col-md-6">
+             <p class="text-muted" id="trade-history-symbol-shown-text" style="margin-bottom: 0;"></p>
+        </div>
+    </div>
 
     <!-- Trade History Section -->
     <section id="trade-history">
@@ -75,7 +93,6 @@
                         </tr>
                     </thead>
                     <tbody id="trade-history-table">
-                        <!-- Rows will be populated by JavaScript -->
                         <tr><td colspan="7">No trade history or loading...</td></tr>
                     </tbody>
                 </table>
@@ -88,88 +105,112 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    console.log("Dashboard JS loaded");
+    console.log("Dashboard JS loaded - with trade history symbol selector logic");
     const balanceDetailsTable = document.getElementById('balance-details-table');
     const openTradesTable = document.getElementById('open-trades-table');
     const tradeHistoryTable = document.getElementById('trade-history-table');
     const totalEquitySpan = document.getElementById('total-equity');
+    const tradeHistorySymbolSelect = document.getElementById('trade-history-symbol-select');
+    const loadTradeHistoryBtn = document.getElementById('load-trade-history-btn');
+    const tradeHistorySymbolShownText = document.getElementById('trade-history-symbol-shown-text');
 
     function populateBalanceTable(balances) {
-        balanceDetailsTable.innerHTML = ''; // Clear loading/previous
-        let totalUsdValue = 0; // Placeholder for summing up equity
+        balanceDetailsTable.innerHTML = '';
+        if (Object.keys(balances).length === 0) {
+            balanceDetailsTable.innerHTML = '<tr><td colspan="4">No balance data.</td></tr>'; return;
+        }
         for (const asset in balances) {
             const row = balanceDetailsTable.insertRow();
             row.insertCell().textContent = asset;
-            row.insertCell().textContent = parseFloat(balances[asset].free || balances[asset]).toFixed(8); // Adjust based on actual balance structure
-            row.insertCell().textContent = parseFloat(balances[asset].locked || 0).toFixed(8); // Adjust
-            let totalAsset = parseFloat(balances[asset].free || balances[asset]) + parseFloat(balances[asset].locked || 0);
-            row.insertCell().textContent = totalAsset.toFixed(8);
-            // Add logic for USD value if prices are available to sum totalEquitySpan
+            const assetData = balances[asset]; // This is the value (e.g., "100.00") if not detailed
+            if (typeof assetData === 'object' && assetData !== null && 'free' in assetData) { // Binance format: {asset: "BTC", free: "0.001", locked: "0"}
+                 row.insertCell().textContent = parseFloat(assetData.free || 0).toFixed(8);
+                 row.insertCell().textContent = parseFloat(assetData.locked || 0).toFixed(8);
+                 let totalAsset = parseFloat(assetData.free || 0) + parseFloat(assetData.locked || 0);
+                 row.insertCell().textContent = totalAsset.toFixed(8);
+            } else { // Simpler format from API like: { "BTC": "0.001", ...} or direct value from older get_account_balance
+                 row.insertCell().textContent = parseFloat(assetData || 0).toFixed(8);
+                 row.insertCell().textContent = "0.00000000"; // No locked info in this format
+                 row.insertCell().textContent = parseFloat(assetData || 0).toFixed(8);
+            }
         }
-        // totalEquitySpan.textContent = '$' + totalUsdValue.toFixed(2); // Update total equity
     }
-
     function populateOpenTradesTable(trades) {
-        openTradesTable.innerHTML = ''; // Clear loading/previous
+        openTradesTable.innerHTML = '';
         if (!trades || trades.length === 0) {
-            openTradesTable.innerHTML = '<tr><td colspan="7">No open trades.</td></tr>';
-            return;
+            openTradesTable.innerHTML = '<tr><td colspan="7">No open trades.</td></tr>'; return;
         }
-        trades.forEach(trade => {
+        trades.forEach(trade => { // Assuming 'trades' is from get_open_orders()
             const row = openTradesTable.insertRow();
             row.insertCell().textContent = trade.symbol;
-            row.insertCell().textContent = trade.type; // e.g. LIMIT
+            row.insertCell().textContent = trade.type; // e.g. LIMIT, MARKET
             row.insertCell().textContent = trade.origQty;
             row.insertCell().textContent = trade.price;
-            row.insertCell().textContent = 'N/A'; // Current Price - needs real-time update or separate fetch
-            row.insertCell().textContent = 'N/A'; // P/L - needs calculation
-            row.insertCell().innerHTML = '<button class="btn btn-sm btn-danger">Close</button>'; // Placeholder
+            row.insertCell().textContent = 'N/A'; // Current Price - placeholder
+            row.insertCell().textContent = 'N/A'; // P/L - placeholder
+            row.insertCell().innerHTML = `<button class="btn btn-sm btn-danger" onclick="alert('Cancel order ${trade.orderId} for ${trade.symbol} - Not implemented')">Cancel</button>`;
         });
     }
-
-    function populateTradeHistoryTable(history) {
-        tradeHistoryTable.innerHTML = ''; // Clear loading/previous
+    function populateTradeHistoryTable(history, symbolShown) {
+        tradeHistoryTable.innerHTML = '';
+        if (tradeHistorySymbolShownText) tradeHistorySymbolShownText.textContent = `Showing history for: ${symbolShown}`;
         if (!history || history.length === 0) {
-            tradeHistoryTable.innerHTML = '<tr><td colspan="7">No trade history.</td></tr>';
-            return;
+            tradeHistoryTable.innerHTML = `<tr><td colspan="7">No trade history for ${symbolShown}.</td></tr>`; return;
         }
-        history.forEach(item => {
+        history.forEach(item => { // Assuming 'history' is from get_my_trades()
             const row = tradeHistoryTable.insertRow();
-            row.insertCell().textContent = new Date(item.time).toLocaleString(); // Assuming 'time' is a timestamp
+            row.insertCell().textContent = new Date(item.time).toLocaleString();
             row.insertCell().textContent = item.symbol;
-            row.insertCell().textContent = item.orderListId !== -1 ? 'OCO' : (item.isStop ? 'STOP' : 'LIMIT/MARKET'); // Approximation
+            row.insertCell().textContent = item.isStop ? 'STOP' : (item.type || 'N/A'); // Needs item.type for LIMIT/MARKET
             row.insertCell().textContent = item.isBuyer ? 'BUY' : 'SELL';
             row.insertCell().textContent = item.price;
             row.insertCell().textContent = item.qty;
-            row.insertCell().textContent = item.commission && parseFloat(item.commission) > 0 ? 'FILLED' : 'N/A'; // Approximation of status
+            // Binance `get_my_trades` doesn't directly give 'status'. We infer from commission.
+            // A more direct status would be from get_order if these were order IDs.
+            row.insertCell().textContent = item.commission && parseFloat(item.commission) > 0 && item.commissionAsset ? 'FILLED' : 'N/A';
         });
     }
 
-    fetch('/api/dashboard_data')
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok: ' + response.statusText);
-            }
-            return response.json();
-        })
-        .then(data => {
+    async function fetchDashboardData(tradeHistorySymbol = 'BTCUSDT') {
+        tradeHistoryTable.innerHTML = `<tr><td colspan="7">Loading history for ${tradeHistorySymbol}...</td></tr>`;
+        if (tradeHistorySymbolShownText) tradeHistorySymbolShownText.textContent = `Fetching history for: ${tradeHistorySymbol}...`;
+
+        const url = `/api/dashboard_data?trade_history_symbol=${encodeURIComponent(tradeHistorySymbol)}`;
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Network response error: ' + response.statusText);
+            const data = await response.json();
+
             if (data.error) {
                 console.error('Error fetching dashboard data:', data.error);
                 balanceDetailsTable.innerHTML = '<tr><td colspan="4">' + data.error + '</td></tr>';
                 openTradesTable.innerHTML = '<tr><td colspan="7">' + data.error + '</td></tr>';
                 tradeHistoryTable.innerHTML = '<tr><td colspan="7">' + data.error + '</td></tr>';
+                if (tradeHistorySymbolShownText) tradeHistorySymbolShownText.textContent = `Error loading history.`;
                 return;
             }
-            populateBalanceTable(data.balance); // API returns balance object directly
+            populateBalanceTable(data.balance);
             populateOpenTradesTable(data.open_trades);
-            populateTradeHistoryTable(data.trade_history);
-        })
-        .catch(error => {
+            populateTradeHistoryTable(data.trade_history, data.trade_history_symbol_shown);
+
+        } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
             balanceDetailsTable.innerHTML = '<tr><td colspan="4">Failed to load balance.</td></tr>';
             openTradesTable.innerHTML = '<tr><td colspan="7">Failed to load open trades.</td></tr>';
             tradeHistoryTable.innerHTML = '<tr><td colspan="7">Failed to load trade history.</td></tr>';
+            if (tradeHistorySymbolShownText) tradeHistorySymbolShownText.textContent = `Error loading history.`;
+        }
+    }
+
+    if (loadTradeHistoryBtn) {
+        loadTradeHistoryBtn.addEventListener('click', function() {
+            const selectedSymbol = tradeHistorySymbolSelect.value;
+            fetchDashboardData(selectedSymbol);
         });
+    }
+
+    // Initial load
+    fetchDashboardData();
 });
 </script>
 {% endblock %}

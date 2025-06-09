@@ -1,235 +1,159 @@
-// Global Chart instance variable
 let priceChartInstance = null;
 let currentChartSymbol = null;
-let currentChartTimeframe = null; // To store current timeframe string e.g. "1m", "5m"
+let currentChartTimeframe = null;
 let socket = null;
 
-function getSocket() {
+function getSocket() { /* ... (same as before) ... */
     if (!socket || !socket.connected) {
-        if (typeof io === 'undefined') {
-            console.error("Socket.IO client not found.");
-            return null;
-        }
+        if (typeof io === 'undefined') { console.error("Socket.IO client not found."); return null; }
         socket = io(location.protocol + '//' + document.domain + ':' + location.port);
-        socket.on('connect', () => {
-            console.log('Socket.IO connected for chart updates.');
-            if (currentChartSymbol) subscribeToPriceUpdates(currentChartSymbol);
-        });
+        socket.on('connect', () => { if (currentChartSymbol) subscribeToPriceUpdates(currentChartSymbol); });
         socket.on('disconnect', () => console.log('Socket.IO disconnected for chart updates.'));
         socket.on('connect_error', (err) => console.error('Chart Socket.IO connection error:', err));
-        socket.on('price_update', function(data) {
-            if (data.symbol === currentChartSymbol && priceChartInstance) {
-                updateChartWithRealtimeData(data);
-            }
-        });
-        socket.on('status', (data) => console.log('Subscription status:', data.data));
+        socket.on('price_update', data => { if (data.symbol === currentChartSymbol && priceChartInstance) updateChartWithRealtimeData(data); });
+        socket.on('status', data => console.log('Subscription status:', data.data));
     }
     return socket;
 }
-
-function subscribeToPriceUpdates(symbol) {
-    const s = getSocket();
-    if (s && symbol) {
-        console.log(`Subscribing to price updates for ${symbol}`);
-        s.emit('subscribe_to_symbol_price', { symbol: symbol });
-        currentChartSymbol = symbol; // Set after successful emit or confirmation? For now, optimistic.
-    }
+function subscribeToPriceUpdates(symbol) { /* ... (same as before) ... */
+    const s = getSocket(); if (s && symbol) s.emit('subscribe_to_symbol_price', { symbol: symbol }); currentChartSymbol = symbol;
+}
+function unsubscribeFromPriceUpdates(symbol) { /* ... (same as before) ... */
+    const s = getSocket(); if (s && symbol) s.emit('unsubscribe_from_symbol_price', { symbol: symbol }); if (currentChartSymbol === symbol) currentChartSymbol = null;
 }
 
-function unsubscribeFromPriceUpdates(symbol) {
-    const s = getSocket();
-    if (s && symbol) {
-        console.log(`Unsubscribing from price updates for ${symbol}`);
-        s.emit('unsubscribe_from_symbol_price', { symbol: symbol });
-        if (currentChartSymbol === symbol) currentChartSymbol = null;
+async function fetchOhlcData(symbol, timeframe, limit = 200, indicators = []) {
+    let url = `/api/ohlc_data?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`;
+    if (indicators.length > 0) {
+        url += `&indicators=${indicators.join(',')}`;
     }
-}
-
-async function fetchOhlcData(symbol, timeframe, limit = 200) {
-    // Ensure timeframe is passed to API
-    const response = await fetch(`/api/ohlc_data?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`);
-    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}, message: ${await response.text()}`);
     return await response.json();
 }
 
-function timeframeToMilliseconds(timeframeStr) {
-    if (!timeframeStr) return 0;
-    const unit = timeframeStr.slice(-1);
-    const value = parseInt(timeframeStr.slice(0, -1));
-    if (isNaN(value)) return 0;
-
-    if (unit === 'm') return value * 60 * 1000;
-    if (unit === 'h') return value * 60 * 60 * 1000;
-    if (unit === 'd') return value * 24 * 60 * 60 * 1000;
-    console.error("Unsupported timeframe unit for ms conversion:", timeframeStr);
-    return 0;
+function timeframeToMilliseconds(timeframeStr) { /* ... (same as before) ... */
+    if (!timeframeStr) return 0; const unit = timeframeStr.slice(-1); const value = parseInt(timeframeStr.slice(0, -1)); if (isNaN(value)) return 0;
+    if (unit === 'm') return value * 60 * 1000; if (unit === 'h') return value * 60 * 60 * 1000; if (unit === 'd') return value * 24 * 60 * 60 * 1000; return 0;
 }
 
-function updateChartWithRealtimeData(priceData) {
-    if (!priceChartInstance || !priceChartInstance.data.datasets[0] || !currentChartTimeframe) {
-        // console.warn("Chart not ready for update:", !priceChartInstance, !priceChartInstance.data.datasets[0], !currentChartTimeframe);
-        return;
-    }
+function updateChartWithRealtimeData(priceData) { /* ... (same as before, advanced logic) ... */
+    if (!priceChartInstance || !priceChartInstance.data.datasets[0] || !currentChartTimeframe) return;
+    const ohlcDataset = priceChartInstance.data.datasets.find(ds => ds.type === 'candlestick' || ds.label.includes('Price'));
+    if (!ohlcDataset || ohlcDataset.data.length === 0) return;
+    const dataset = ohlcDataset.data;
 
-    const dataset = priceChartInstance.data.datasets[0].data;
-    if (dataset.length === 0) {
-        console.warn("Chart dataset is empty, cannot update with real-time data yet.");
-        return;
-    }
-
-    const newPrice = parseFloat(priceData.price);
-    const eventTime = parseInt(priceData.event_time);
-
-    if (isNaN(newPrice) || isNaN(eventTime)) {
-        console.error("Invalid price or event_time in priceData:", priceData);
-        return;
-    }
-
-    const intervalMs = timeframeToMilliseconds(currentChartTimeframe);
-    if (intervalMs === 0) {
-        console.error("IntervalMs is 0, cannot process candle update for timeframe:", currentChartTimeframe);
-        return;
-    }
-
-    let lastCandle = dataset[dataset.length - 1];
-    const lastCandleOpenTime = lastCandle.x; // This is a timestamp
-    const nextCandleOpenTime = lastCandleOpenTime + intervalMs;
-
+    const newPrice = parseFloat(priceData.price); const eventTime = parseInt(priceData.event_time);
+    if (isNaN(newPrice) || isNaN(eventTime)) { console.error("Invalid price/event_time:", priceData); return; }
+    const intervalMs = timeframeToMilliseconds(currentChartTimeframe); if (intervalMs === 0) return;
+    let lastCandle = dataset[dataset.length - 1]; const lastCandleOpenTime = lastCandle.x; const nextCandleOpenTime = lastCandleOpenTime + intervalMs;
     if (eventTime >= lastCandleOpenTime && eventTime < nextCandleOpenTime) {
-        // Update falls within the current last candle's interval
-        lastCandle.c = newPrice;
-        if (newPrice > lastCandle.h) lastCandle.h = newPrice;
-        if (newPrice < lastCandle.l) lastCandle.l = newPrice;
+        lastCandle.c = newPrice; if (newPrice > lastCandle.h) lastCandle.h = newPrice; if (newPrice < lastCandle.l) lastCandle.l = newPrice;
     } else if (eventTime >= nextCandleOpenTime) {
-        // Price update signifies a new candle or candles
         let currentNewCandleOpenTime = nextCandleOpenTime;
-        // Loop to fill potential gaps if multiple candle periods have passed
         while(eventTime >= currentNewCandleOpenTime + intervalMs) {
-            const gapCandle = {
-                x: currentNewCandleOpenTime,
-                o: lastCandle.c, h: lastCandle.c, l: lastCandle.c, c: lastCandle.c // Fill with previous close
-            };
-            dataset.push(gapCandle);
-            lastCandle = gapCandle; // The newly added gap candle is now the last one
-            currentNewCandleOpenTime += intervalMs;
+            dataset.push({ x: currentNewCandleOpenTime, o: lastCandle.c, h: lastCandle.c, l: lastCandle.c, c: lastCandle.c });
+            lastCandle = dataset[dataset.length-1]; currentNewCandleOpenTime += intervalMs;
         }
-
-        // Create the actual new candle for the current eventTime period
-        const newCandle = {
-            x: currentNewCandleOpenTime,
-            o: newPrice, h: newPrice, l: newPrice, c: newPrice
-        };
-        dataset.push(newCandle);
-
-        const MAX_CANDLES_DISPLAYED = 500; // Example limit
-        while (dataset.length > MAX_CANDLES_DISPLAYED) {
-            dataset.shift();
-        }
-    } else {
-        // Event time is before the last candle's open time (e.g. old message, ignore)
-        // console.log("Received old price update, ignoring.", {eventTime: eventTime, lastCandleOpenTime: lastCandleOpenTime});
+        dataset.push({ x: currentNewCandleOpenTime, o: newPrice, h: newPrice, l: newPrice, c: newPrice });
+        const MAX_CANDLES = 500; if (dataset.length > MAX_CANDLES) dataset.splice(0, dataset.length - MAX_CANDLES);
     }
+    // TODO: Update indicators based on new price data if needed, or wait for full refresh.
     priceChartInstance.update('quiet');
 }
 
-function renderPriceChart(ohlcData, symbol, timeframe) {
-    // Store the timeframe, it's used by updateChartWithRealtimeData
+function renderPriceChart(apiResponse, symbol, timeframe) {
     currentChartTimeframe = timeframe;
     const ctx = document.getElementById('priceChart').getContext('2d');
 
-    // Ensure data is sorted by time for candlestick
+    const ohlcData = apiResponse.ohlc || [];
     ohlcData.sort((a, b) => a.x - b.x);
 
-    const chartData = {
-        datasets: [{
-            label: `${symbol} (${timeframe}) Price`,
-            data: ohlcData, // Expects {x, o, h, l, c}
-            // type: 'candlestick', // Already default for the chart instance type
-        }]
-    };
+    const datasets = [{
+        label: `${symbol} (${timeframe}) Price`,
+        data: ohlcData,
+        type: 'candlestick',
+        borderColor: 'rgba(75, 192, 192, 1)',
+        backgroundColor: 'rgba(75, 192, 192, 0.5)'
+    }];
 
-    if (priceChartInstance) {
-        priceChartInstance.destroy();
+    const indicatorColors = ['rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)', 'rgba(153, 102, 255, 1)', 'rgba(255, 159, 64, 1)'];
+    let colorIndex = 0;
+    for (const key in apiResponse) {
+        if (key !== 'ohlc' && Array.isArray(apiResponse[key])) {
+            const indicatorData = apiResponse[key].map(point => ({x: point.x, y: parseFloat(point.y)}));
+            indicatorData.sort((a,b) => a.x - b.x);
+            datasets.push({
+                label: key.toUpperCase(),
+                data: indicatorData,
+                type: 'line',
+                borderColor: indicatorColors[colorIndex % indicatorColors.length],
+                borderWidth: 1.5,
+                fill: false,
+                pointRadius: 0,
+                yAxisID: 'y',
+            });
+            colorIndex++;
+        }
     }
 
+    if (priceChartInstance) priceChartInstance.destroy();
+
     priceChartInstance = new Chart(ctx, {
-        type: 'candlestick', // Ensure this type is registered if using extensions
-        data: chartData,
+        data: { datasets: datasets },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                x: {
-                    type: 'time',
-                    time: {
-                        unit: 'minute', // This should be dynamically set based on timeframe
-                        tooltipFormat: 'PPpp' // Example: Feb 2, 2024, 10:30:00 AM
-                    },
-                    title: { display: true, text: 'Time' }
-                },
-                y: {
-                    title: { display: true, text: 'Price' }
+            responsive: true, maintainAspectRatio: false,
+            scales: { x: { type: 'time', time: { unit: 'minute', tooltipFormat: 'PPpp' }, title: { display: true, text: 'Time' } },
+                      y: { position: 'left', title: { display: true, text: 'Price' } } }, // Ensure y-axis is defined
+            plugins: { tooltip: { intersect: false, mode: 'index', callbacks: { label: function(context) {
+                const datasetLabel = context.dataset.label || '';
+                const raw = context.raw;
+                if (context.dataset.type === 'candlestick' && raw && typeof raw.o === 'number') {
+                     return `${datasetLabel}: O:${raw.o.toFixed(2)} H:${raw.h.toFixed(2)} L:${raw.l.toFixed(2)} C:${raw.c.toFixed(2)}`;
+                } else if (context.dataset.type === 'line') {
+                     return `${datasetLabel}: ${context.parsed.y.toFixed(4)}`;
                 }
-            },
-            plugins: {
-                tooltip: {
-                    intersect: false,
-                    mode: 'index',
-                    callbacks: {
-                        label: function(context) {
-                            const d = context.raw;
-                            if (d && typeof d.o !== 'undefined') {
-                                return `O:${d.o} H:${d.h} L:${d.l} C:${d.c}`;
-                            }
-                            return `${context.dataset.label}: ${context.parsed.y}`;
-                        }
-                    }
-                }
-            }
+                return `${datasetLabel}: ${context.parsed.y}`;
+            }}}}
         }
     });
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    getSocket(); // Initialize socket connection early
+    getSocket();
     const loadChartBtn = document.getElementById('load-chart-btn');
+    const indicatorsSelect = document.getElementById('chart-indicators');
+
 
     if (loadChartBtn) {
         loadChartBtn.addEventListener('click', async function() {
             const symbol = document.getElementById('chart-symbol').value.toUpperCase();
             const timeframe = document.getElementById('chart-timeframe').value;
+            const selectedIndicators = Array.from(indicatorsSelect.selectedOptions).map(opt => opt.value);
 
-            // Unsubscribe from old symbol if currentChartSymbol is set and different
             if (currentChartSymbol && currentChartSymbol !== symbol) {
                 unsubscribeFromPriceUpdates(currentChartSymbol);
             }
-            // Update currentChartTimeframe regardless, as it might change even for the same symbol
             currentChartTimeframe = timeframe;
 
             try {
-                const ohlcData = await fetchOhlcData(symbol, timeframe); // Pass timeframe
-                if (ohlcData && ohlcData.length > 0) {
-                    renderPriceChart(ohlcData, symbol, timeframe); // Pass timeframe to render
-                    // Subscribe to new symbol's updates if it's different or no symbol was current
-                    if (currentChartSymbol !== symbol) {
-                         subscribeToPriceUpdates(symbol);
-                    } else if (!currentChartSymbol) { // Or if no symbol was subscribed yet
+                const apiResponse = await fetchOhlcData(symbol, timeframe, 200, selectedIndicators);
+                if (apiResponse && apiResponse.ohlc && apiResponse.ohlc.length > 0) {
+                    renderPriceChart(apiResponse, symbol, timeframe);
+                    if (currentChartSymbol !== symbol || !socket.connected) { // Resubscribe if symbol changed or if socket reconnected
                          subscribeToPriceUpdates(symbol);
                     }
                 } else {
-                    alert(`No OHLC data found for ${symbol} with timeframe ${timeframe}.`);
+                    alert(`No OHLC data for ${symbol}/${timeframe}.`);
                     if (priceChartInstance) priceChartInstance.destroy();
-                    if (currentChartSymbol) unsubscribeFromPriceUpdates(currentChartSymbol); // Unsubscribe if chart is cleared
-                    currentChartSymbol = null;
-                    currentChartTimeframe = null;
+                    if (currentChartSymbol) unsubscribeFromPriceUpdates(currentChartSymbol);
+                    currentChartSymbol = null; currentChartTimeframe = null;
                 }
             } catch (error) {
-                console.error(`Failed to load chart data for ${symbol} / ${timeframe}:`, error);
-                alert(`Failed to load chart data: ${error.message}. Check console.`);
+                console.error(`Failed to load chart:`, error); alert(`Failed to load chart: ${error.message}`);
                 if (priceChartInstance) priceChartInstance.destroy();
                 if (currentChartSymbol) unsubscribeFromPriceUpdates(currentChartSymbol);
-                currentChartSymbol = null;
-                currentChartTimeframe = null;
+                currentChartSymbol = null; currentChartTimeframe = null;
             }
         });
     }
